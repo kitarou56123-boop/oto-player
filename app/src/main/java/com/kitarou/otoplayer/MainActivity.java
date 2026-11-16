@@ -66,7 +66,10 @@ public class MainActivity extends Activity implements Player.Listener {
     VLCVideoLayout videoLayout;
     LinearLayout videoCtrl;
     SeekBar vSeek;
-    Button vPlay;
+    Button vPlay, vOrientBtn, vFullBtn;
+    int vOrient = 0;          // 0=縦 1=横 2=自動
+    boolean vFull = true;     // true=全画面 false=普通画面
+    int insetTop = 0;
 
     int tab = 0; // 0=音楽 1=動画 2=音質
     int view = 0; // 音楽の見方 0=曲 1=アーティスト 2=アルバム 3=フォルダ
@@ -313,7 +316,9 @@ public class MainActivity extends Activity implements Player.Listener {
             } else {
                 top = ins.getSystemWindowInsetTop(); bottom = ins.getSystemWindowInsetBottom();
             }
+            insetTop = top;
             mainCol.setPadding(dp(10), top + dp(6), dp(10), bottom + dp(8));
+            applyVideoMode();
             videoCtrl.setPadding(dp(10), dp(8), dp(10), bottom + dp(10));
             return ins;
         });
@@ -494,9 +499,33 @@ public class MainActivity extends Activity implements Player.Listener {
         videoLayout = new VLCVideoLayout(this);
         videoBox.addView(videoLayout, new FrameLayout.LayoutParams(-1, -1));
         videoCtrl = new LinearLayout(this);
-        videoCtrl.setOrientation(LinearLayout.HORIZONTAL);
-        videoCtrl.setGravity(Gravity.CENTER_VERTICAL);
+        videoCtrl.setOrientation(LinearLayout.VERTICAL);
         videoCtrl.setBackgroundColor(0xAA000000);
+        // 上の段：向き・全画面の切り替え
+        LinearLayout vTop = new LinearLayout(this);
+        vTop.setOrientation(LinearLayout.HORIZONTAL);
+        vOrientBtn = button("", 16);
+        vFullBtn = button("", 16);
+        vOrientBtn.setOnClickListener(v -> {
+            vOrient = (vOrient + 1) % 3;
+            getPreferences(MODE_PRIVATE).edit().putInt("vOrient", vOrient).apply();
+            applyOrientation();
+        });
+        vFullBtn.setOnClickListener(v -> {
+            vFull = !vFull;
+            getPreferences(MODE_PRIVATE).edit().putBoolean("vFull", vFull).apply();
+            applyVideoMode();
+        });
+        LinearLayout.LayoutParams tp1 = lp(0, dp(46), 1), tp2 = lp(0, dp(46), 1);
+        tp1.setMargins(0, 0, dp(4), dp(6));
+        tp2.setMargins(dp(4), 0, 0, dp(6));
+        vTop.addView(vOrientBtn, tp1);
+        vTop.addView(vFullBtn, tp2);
+        videoCtrl.addView(vTop);
+        // 下の段：再生・シーク・閉じる
+        LinearLayout vRow = new LinearLayout(this);
+        vRow.setOrientation(LinearLayout.HORIZONTAL);
+        vRow.setGravity(Gravity.CENTER_VERTICAL);
         vPlay = button("⏸", 20);
         Button vClose = button("✕ 閉じる", 16);
         vSeek = new SeekBar(this);
@@ -504,9 +533,12 @@ public class MainActivity extends Activity implements Player.Listener {
         vSeek.setOnSeekBarChangeListener(seekListener());
         vPlay.setOnClickListener(v -> player.toggle());
         vClose.setOnClickListener(v -> closeVideo());
-        videoCtrl.addView(vPlay, lp(dp(60), dp(48), 0));
-        videoCtrl.addView(vSeek, lp(0, dp(48), 1));
-        videoCtrl.addView(vClose, lp(dp(110), dp(48), 0));
+        vRow.addView(vPlay, lp(dp(60), dp(48), 0));
+        vRow.addView(vSeek, lp(0, dp(48), 1));
+        vRow.addView(vClose, lp(dp(110), dp(48), 0));
+        videoCtrl.addView(vRow);
+        vOrient = getPreferences(MODE_PRIVATE).getInt("vOrient", 0);
+        vFull = getPreferences(MODE_PRIVATE).getBoolean("vFull", true);
         FrameLayout.LayoutParams vcp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         videoBox.addView(videoCtrl, vcp);
         View tapper = new View(this);
@@ -552,13 +584,58 @@ public class MainActivity extends Activity implements Player.Listener {
     void openVideo() {
         videoBox.setVisibility(View.VISIBLE);
         videoCtrl.setVisibility(View.VISIBLE);
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR);
+        applyOrientation();
+        applyVideoMode();
+    }
+
+    /** 画面の向き：縦 → 横 → 自動 の順に切り替え */
+    void applyOrientation() {
+        String[] names = {"↻ 向き：縦", "↻ 向き：横", "↻ 向き：自動"};
+        vOrientBtn.setText(names[vOrient]);
+        if (videoBox.getVisibility() != View.VISIBLE) return;
+        int[] o = {ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+                ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR};
+        setRequestedOrientation(o[vOrient]);
+    }
+
+    /** 全画面（上下のバーを隠して画面いっぱい）と普通画面（バーを出して映像全体を表示） */
+    @SuppressWarnings("deprecation")
+    void applyVideoMode() {
+        if (vFullBtn == null) return;
+        vFullBtn.setText(vFull ? "▢ 普通画面にする" : "⛶ 全画面にする");
+        boolean showing = videoBox.getVisibility() == View.VISIBLE;
+        boolean hide = showing && vFull;
+        if (Build.VERSION.SDK_INT >= 30) {
+            android.view.WindowInsetsController c = getWindow().getInsetsController();
+            if (c != null) {
+                if (hide) {
+                    c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    c.hide(WindowInsets.Type.systemBars());
+                } else {
+                    c.show(WindowInsets.Type.systemBars());
+                }
+            }
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(hide
+                    ? View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                      | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    : View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        }
+        videoBox.setPadding(0, showing && !vFull ? insetTop : 0, 0, 0);
+        if (player.mp != null) {
+            try {
+                player.mp.setVideoScale(vFull ? MediaPlayer.ScaleType.SURFACE_FIT_SCREEN
+                                               : MediaPlayer.ScaleType.SURFACE_BEST_FIT);
+            } catch (Throwable ignored) { }
+        }
     }
 
     void closeVideo() {
         MediaItem it = player.current();
         if (it != null && it.video) player.stop();
         videoBox.setVisibility(View.GONE);
+        applyVideoMode();
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
     }
 
@@ -687,9 +764,6 @@ public class MainActivity extends Activity implements Player.Listener {
         col.addView(sp2, lp(-1, dp(14), 0));
 
         // 10バンド
-        TextView h3 = text("イコライザー（10バンド）", 20, ACC);
-        h3.setTypeface(Typeface.DEFAULT_BOLD);
-        col.addView(h3);
         int n = Math.min(Player.BANDS, MediaPlayer.Equalizer.getBandCount());
         for (int i = 0; i < n; i++) {
             float f = MediaPlayer.Equalizer.getBandFrequency(i);

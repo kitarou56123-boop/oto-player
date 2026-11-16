@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.media.audiofx.Equalizer;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -16,7 +17,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** 再生の中心（アプリ全体で1つ） */
+/**
+ * 再生の中心（アプリ全体で1つ）。
+ * ふだんはVLCで再生し、VLCで鳴らない時はAndroid標準の仕組みに自動で切り替える。
+ */
 public class Player {
 
     public interface Listener { void onPlayerChanged(); }
@@ -24,6 +28,7 @@ public class Player {
     public static final int BANDS = 10;
     /** 重低音をどの帯域にどれだけ足すか（VLCの10バンド：60,170,310,600Hz…） */
     static final float[] BASS_WEIGHT = {1.0f, 0.65f, 0.25f, 0, 0, 0, 0, 0, 0, 0};
+    static final float[] BAND_HZ = {60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000};
 
     private static Player inst;
 
@@ -33,8 +38,8 @@ public class Player {
     }
 
     final Context ctx;
-    final LibVLC vlc;
-    final MediaPlayer mp;
+    LibVLC vlc;
+    MediaPlayer mp;
     final Handler main = new Handler(Looper.getMainLooper());
     final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
@@ -46,6 +51,11 @@ public class Player {
     public String lastError = null;
     AudioFocusRequest focusReq;
 
+    // Android標準の再生（予備）
+    android.media.MediaPlayer amp;
+    Equalizer aeq;
+    boolean useAndroid = false;
+
     // 音質設定
     public final float[] bands = new float[BANDS];
     public float bass = 0;
@@ -53,22 +63,26 @@ public class Player {
 
     private Player(Context c) {
         ctx = c;
-        ArrayList<String> opts = new ArrayList<>();
-        opts.add("--audio-resampler=soxr");   // 高品質なサンプルレート変換
-        opts.add("--no-audio-time-stretch");
-        vlc = new LibVLC(c, opts);
-        mp = new MediaPlayer(vlc);
-        mp.setEventListener(ev -> {
-            if (ev.type == MediaPlayer.Event.EndReached) {
-                main.post(this::onEnd);
-            } else if (ev.type == MediaPlayer.Event.EncounteredError) {
-                main.post(this::onError);
-            } else if (ev.type == MediaPlayer.Event.Playing) {
-                errCount = 0;
-                lastError = null;
-            }
-            fire();
-        });
+        try {
+            ArrayList<String> opts = new ArrayList<>();
+            opts.add("--no-audio-time-stretch");
+            vlc = new LibVLC(c, opts);
+            mp = new MediaPlayer(vlc);
+            mp.setEventListener(ev -> {
+                if (useAndroid) return;
+                if (ev.type == MediaPlayer.Event.EndReached) {
+                    main.post(this::onEnd);
+                } else if (ev.type == MediaPlayer.Event.EncounteredError) {
+                    main.post(this::onVlcError);
+                } else if (ev.type == MediaPlayer.Event.Playing) {
+                    errCount = 0;
+                    lastError = null;
+                }
+                fire();
+            });
+        } catch (Throwable t) {
+            mp = null;   // VLCが使えない時は標準の仕組みだけで動かす
+        }
         loadEq();
         applyEq();
     }
@@ -84,56 +98,219 @@ public class Player {
         return (index >= 0 && index < queue.size()) ? queue.get(index) : null;
     }
 
-    public boolean isPlaying() { return mp.isPlaying(); }
-    public long time() { return mp.getTime(); }
-    public long length() { return mp.getLength(); }
-    public void seek(long t) { if (loaded) mp.setTime(t); }
+    public boolean isPlaying() {
+        try {
+            if (useAndroid) return amp != null && amp.isPlaying();
+            return mp != null && mp.isPlaying();
+        } catch (Exception e) { return false; }
+    }
+
+    public long time() {
+        try {
+            if (useAndroid) return amp != null ? amp.getCurrentPosition() : 0;
+            return mp != null ? mp.getTime() : 0;
+        } catch (Exception e) { return 0; }
+    }
+
+    public long length() {
+        try {
+            if (useAndroid) return amp != null ? amp.getDuration() : 0;
+            return mp != null ? mp.getLength() : 0;
+        } catch (Exception e) { return 0; }
+    }
+
+    public void seek(long t) {
+        if (!loaded) return;
+        try {
+            if (useAndroid) { if (amp != null) amp.seekTo((int) t); }
+            else if (mp != null) mp.setTime(t);
+        } catch (Exception ignored) { }
+        fire();
+    }
+
+    /** 画面に出す「いまどうなっているか」 */
+    public String stateText() {
+        if (current() == null) return "";
+        if (useAndroid) return "標準エンジンで再生";
+        if (loaded && mp != null && !mp.isPlaying()) {
+            int st = mp.getPlayerState();
+            if (st == Media.State.Opening) return "読み込み中…";
+        }
+        return "";
+    }
 
     public void play(List<MediaItem> list, int i) {
         queue = new ArrayList<>(list);
         index = i;
+        errCount = 0;
         start();
     }
+
+    /** VLCで鳴り始めなかったら標準の仕組みに切り替える見張り */
+    final Runnable watchdog = () -> {
+        MediaItem it = current();
+        if (it == null || it.video || useAndroid || !loaded) return;
+        if (mp == null || !mp.isPlaying()) startAndroid();
+    };
+
+    /** 標準の仕組みで再生中、時間表示を進める */
+    final Runnable ticker = new Runnable() {
+        @Override public void run() {
+            if (!useAndroid) return;
+            fire();
+            main.postDelayed(this, 500);
+        }
+    };
 
     void start() {
         MediaItem it = current();
         if (it == null) return;
-        Media m = new Media(vlc, it.file.getAbsolutePath());
-        if (!it.video) m.addOption(":no-video");
-        mp.setMedia(m);
-        m.release();
-        applyEq();
-        requestFocus();
-        mp.play();
-        loaded = true;
-        PlaybackService.ensure(ctx);
-        fire();
-    }
-
-    public void toggle() {
-        if (mp.isPlaying()) { mp.pause(); fire(); return; }
-        if (current() == null) return;
-        int st = mp.getPlayerState();
-        boolean dead = st == Media.State.NothingSpecial || st == Media.State.Stopped
-                || st == Media.State.Ended || st == Media.State.Error;
-        if (!loaded || dead) {
-            errCount = 0;
-            start();               // 止まっている・終わっている時は最初から読み込み直す
-        } else {
+        releaseAndroid();
+        main.removeCallbacks(watchdog);
+        if (mp == null) {
+            if (!it.video) startAndroid();
+            return;
+        }
+        try {
+            Media m = new Media(vlc, it.file.getAbsolutePath());
+            if (!it.video) m.addOption(":no-video");
+            mp.setMedia(m);
+            m.release();
+            applyEq();
             requestFocus();
             mp.play();
+            loaded = true;
+            PlaybackService.ensure(ctx);
+            if (!it.video) main.postDelayed(watchdog, 3000);
+        } catch (Throwable t) {
+            if (!it.video) startAndroid();
         }
         fire();
     }
 
-    private void onError() {
+    void startAndroid() {
         MediaItem it = current();
+        if (it == null) return;
+        main.removeCallbacks(watchdog);
+        try { if (mp != null) mp.stop(); } catch (Throwable ignored) { }
+        releaseAndroid();
+        try {
+            amp = new android.media.MediaPlayer();
+            amp.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
+            amp.setDataSource(it.file.getAbsolutePath());
+            amp.setOnCompletionListener(x -> main.post(this::onEnd));
+            amp.setOnErrorListener((x, what, extra) -> {
+                main.post(() -> {
+                    lastError = "再生できませんでした：" + it.file.getName();
+                    releaseAndroid();
+                    loaded = false;
+                    errCount++;
+                    if (errCount < Math.min(queue.size(), 5)) next(); else fire();
+                });
+                return true;
+            });
+            amp.prepare();
+            useAndroid = true;
+            loaded = true;
+            applyEq();
+            requestFocus();
+            amp.start();
+            errCount = 0;
+            lastError = null;
+            PlaybackService.ensure(ctx);
+            main.removeCallbacks(ticker);
+            main.post(ticker);
+        } catch (Exception e) {
+            releaseAndroid();
+            loaded = false;
+            lastError = "再生できませんでした：" + it.file.getName();
+            errCount++;
+            if (errCount < Math.min(queue.size(), 5)) { next(); return; }
+        }
+        fire();
+    }
+
+    void releaseAndroid() {
+        main.removeCallbacks(ticker);
+        if (aeq != null) { try { aeq.release(); } catch (Exception ignored) { } aeq = null; }
+        if (amp != null) { try { amp.release(); } catch (Exception ignored) { } amp = null; }
+        useAndroid = false;
+    }
+
+    public void toggle() {
+        if (current() == null) return;
+        if (isPlaying()) { pause(); return; }
+        if (useAndroid && amp != null && loaded) {
+            requestFocus();
+            amp.start();
+            main.removeCallbacks(ticker);
+            main.post(ticker);
+            fire();
+            return;
+        }
+        boolean dead = true;
+        if (mp != null && loaded) {
+            int st = mp.getPlayerState();
+            dead = st == Media.State.NothingSpecial || st == Media.State.Stopped
+                    || st == Media.State.Ended || st == Media.State.Error;
+        }
+        if (dead) {
+            errCount = 0;
+            start();               // 止まっている・終わっている時は読み込み直す
+        } else {
+            requestFocus();
+            mp.play();
+            MediaItem it = current();
+            main.removeCallbacks(watchdog);
+            if (it != null && !it.video) main.postDelayed(watchdog, 3000);
+        }
+        fire();
+    }
+
+    public void pause() {
+        main.removeCallbacks(watchdog);
+        try {
+            if (useAndroid) { if (amp != null && amp.isPlaying()) amp.pause(); }
+            else if (mp != null && mp.isPlaying()) mp.pause();
+        } catch (Exception ignored) { }
+        fire();
+    }
+
+    public void next() {
+        if (queue.isEmpty()) return;
+        index = (index + 1) % queue.size();
+        start();
+    }
+
+    public void prev() {
+        if (queue.isEmpty()) return;
+        if (time() > 3000) { seek(0); return; }
+        index = (index - 1 + queue.size()) % queue.size();
+        start();
+    }
+
+    public void stop() {
+        main.removeCallbacks(watchdog);
+        releaseAndroid();
+        try { if (mp != null) mp.stop(); } catch (Throwable ignored) { }
+        loaded = false;
+        fire();
+    }
+
+    private void onEnd() {
+        MediaItem it = current();
+        if (it != null && it.video) { stop(); return; }   // 動画は1本で止める
+        next();
+    }
+
+    private void onVlcError() {
+        MediaItem it = current();
+        if (it != null && !it.video) { startAndroid(); return; }   // 音楽は標準の仕組みで再挑戦
         lastError = "再生できませんでした：" + (it != null ? it.file.getName() : "");
         loaded = false;
-        errCount++;
-        // 次の曲へ（ただし全部だめな時に回り続けないように）
-        if (it != null && !it.video && errCount < Math.min(queue.size(), 5)) next();
-        else fire();
+        fire();
     }
 
     void requestFocus() {
@@ -146,39 +323,12 @@ public class Player {
                                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                         .setOnAudioFocusChangeListener(f -> {
                             if (f == AudioManager.AUDIOFOCUS_LOSS || f == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
-                                main.post(this::pause);   // 電話などが来たら一時停止
+                                pause();   // 電話などが来たら一時停止
                         }, main)
                         .build();
             }
             am.requestAudioFocus(focusReq);
         } catch (Exception ignored) { }
-    }
-
-    public void pause() { if (mp.isPlaying()) mp.pause(); fire(); }
-
-    public void next() {
-        if (queue.isEmpty()) return;
-        index = (index + 1) % queue.size();
-        start();
-    }
-
-    public void prev() {
-        if (queue.isEmpty()) return;
-        if (mp.getTime() > 3000) { mp.setTime(0); return; }
-        index = (index - 1 + queue.size()) % queue.size();
-        start();
-    }
-
-    public void stop() {
-        mp.stop();
-        loaded = false;
-        fire();
-    }
-
-    private void onEnd() {
-        MediaItem it = current();
-        if (it != null && it.video) { stop(); return; }   // 動画は1本で止める
-        next();
     }
 
     // ---------- イコライザー ----------
@@ -198,23 +348,54 @@ public class Player {
         e.apply();
     }
 
+    float gain(int i) {
+        return Math.max(-20f, Math.min(20f, bands[i] + BASS_WEIGHT[i] * bass));
+    }
+
     public void applyEq() {
         boolean flat = bass == 0;
         for (float b : bands) if (b != 0) flat = false;
-        if (flat) {                  // 何もいじっていない時は無加工で通す
-            mp.setEqualizer(null);
-            return;
-        }
-        MediaPlayer.Equalizer eq = MediaPlayer.Equalizer.create();
-        int n = Math.min(BANDS, MediaPlayer.Equalizer.getBandCount());
-        float max = 0;
-        for (int i = 0; i < n; i++) {
-            float g = bands[i] + BASS_WEIGHT[i] * bass;
-            g = Math.max(-20f, Math.min(20f, g));
-            eq.setAmp(i, g);
-            if (g > max) max = g;
-        }
-        eq.setPreAmp(protect ? Math.max(-20f, -max) : 0f);  // 音割れ防止
-        mp.setEqualizer(eq);
+        if (useAndroid) { applyAndroidEq(flat); return; }
+        if (mp == null) return;
+        try {
+            if (flat) {                  // 何もいじっていない時は無加工で通す
+                mp.setEqualizer(null);
+                return;
+            }
+            MediaPlayer.Equalizer eq = MediaPlayer.Equalizer.create();
+            int n = Math.min(BANDS, MediaPlayer.Equalizer.getBandCount());
+            float max = 0;
+            for (int i = 0; i < n; i++) {
+                float g = gain(i);
+                eq.setAmp(i, g);
+                if (g > max) max = g;
+            }
+            eq.setPreAmp(protect ? Math.max(-20f, -max) : 0f);  // 音割れ防止
+            mp.setEqualizer(eq);
+        } catch (Throwable ignored) { }
+    }
+
+    /** 標準の仕組みで再生中のイコライザー（スマホ側の帯域に近い所の値を使う） */
+    void applyAndroidEq(boolean flat) {
+        if (amp == null) return;
+        try {
+            if (flat) {
+                if (aeq != null) aeq.setEnabled(false);
+                return;
+            }
+            if (aeq == null) aeq = new Equalizer(0, amp.getAudioSessionId());
+            short[] range = aeq.getBandLevelRange();
+            short nb = aeq.getNumberOfBands();
+            for (short b = 0; b < nb; b++) {
+                float hz = aeq.getCenterFreq(b) / 1000f;
+                int best = 0;
+                for (int i = 1; i < BANDS; i++)
+                    if (Math.abs(Math.log(BAND_HZ[i] / hz)) < Math.abs(Math.log(BAND_HZ[best] / hz))) best = i;
+                int mb = Math.round(gain(best) * 100);
+                mb = Math.max(range[0], Math.min(range[1], mb));
+                aeq.setBandLevel(b, (short) mb);
+            }
+            aeq.setEnabled(true);
+        } catch (Throwable ignored) { }
     }
 }

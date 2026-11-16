@@ -107,7 +107,7 @@ public class MainActivity extends Activity implements Player.Listener {
     protected void onStart() {
         super.onStart();
         player.addListener(this);
-        if (!attached) { player.mp.attachViews(videoLayout, null, false, false); attached = true; }
+        if (!attached && player.mp != null) { player.mp.attachViews(videoLayout, null, false, false); attached = true; }
         onPlayerChanged();
     }
 
@@ -125,7 +125,7 @@ public class MainActivity extends Activity implements Player.Listener {
     @Override
     protected void onStop() {
         player.removeListener(this);
-        if (attached) { player.mp.detachViews(); attached = false; }
+        if (attached && player.mp != null) { player.mp.detachViews(); attached = false; }
         super.onStop();
     }
 
@@ -684,7 +684,8 @@ public class MainActivity extends Activity implements Player.Listener {
             int p = len > 0 ? (int) (t * 1000 / len) : 0;
             seek.setProgress(p);
             vSeek.setProgress(p);
-            timeText.setText(fmt(t) + " / " + fmt(len));
+            String st = player.stateText();
+            timeText.setText(fmt(t) + " / " + fmt(len) + (st.isEmpty() ? "" : "   " + st));
         }
         if (it != lastItem) { lastItem = it; adapter.notifyDataSetChanged(); }
         String err = player.lastError;

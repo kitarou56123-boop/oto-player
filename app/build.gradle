@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+}
+
+def runNo = (System.getenv('RUN_NUMBER') ?: '1') as int
+
+android {
+    namespace 'com.kitarou.otoplayer'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.kitarou.otoplayer'
+        minSdk 26
+        targetSdk 35
+        versionCode runNo
+        versionName "1.0.${runNo}"
+        ndk { abiFilters 'arm64-v8a' }
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('oto.keystore')
+            storePassword 'otoplayer'
+            keyAlias 'oto'
+            keyPassword 'otoplayer'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    implementation 'org.videolan.android:libvlc-all:3.6.0'
+}

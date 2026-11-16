@@ -70,6 +70,10 @@ public class MainActivity extends Activity implements Player.Listener {
     int vOrient = 0;          // 0=縦 1=横 2=自動
     boolean vFull = true;     // true=全画面 false=普通画面
     int insetTop = 0;
+    Button[] presetBtns = new Button[4];
+    int activePreset = -1;                       // いま押されているおまかせ（-1=なし）
+    float[] beforeBands = new float[Player.BANDS];
+    float beforeBass = 0;
 
     int tab = 0; // 0=音楽 1=動画 2=音質
     int view = 0; // 音楽の見方 0=曲 1=アーティスト 2=アルバム 3=フォルダ
@@ -670,7 +674,7 @@ public class MainActivity extends Activity implements Player.Listener {
         bassBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar s, int p, boolean u) {
                 bassVal.setText(String.format(Locale.US, "+%.1f dB", p / 10f));
-                if (u) { player.bass = p / 10f; player.applyEq(); }
+                if (u) { player.bass = p / 10f; player.applyEq(); clearPreset(); }
             }
             public void onStartTrackingTouch(SeekBar s) { }
             public void onStopTrackingTouch(SeekBar s) { player.saveEq(); }
@@ -699,13 +703,27 @@ public class MainActivity extends Activity implements Player.Listener {
         pr.setPadding(0, dp(6), 0, dp(14));
         for (int i = 0; i < names.length; i++) {
             Button b = button(names[i], 15);
+            presetBtns[i] = b;
             final int k = i;
             b.setOnClickListener(v -> {
-                System.arraycopy(presets[k], 0, player.bands, 0, Player.BANDS);
-                player.bass = presetBass[k];
+                if (activePreset == k) {
+                    // もう一度押したら、押す前の音に戻す
+                    System.arraycopy(beforeBands, 0, player.bands, 0, Player.BANDS);
+                    player.bass = beforeBass;
+                    activePreset = -1;
+                } else {
+                    if (activePreset < 0) {   // 最初に押した時だけ、元の音を覚えておく
+                        System.arraycopy(player.bands, 0, beforeBands, 0, Player.BANDS);
+                        beforeBass = player.bass;
+                    }
+                    System.arraycopy(presets[k], 0, player.bands, 0, Player.BANDS);
+                    player.bass = presetBass[k];
+                    activePreset = k;
+                }
                 player.applyEq();
                 player.saveEq();
                 refreshEq();
+                updatePresetBtns();
             });
             LinearLayout.LayoutParams p = lp(0, dp(46), 1);
             p.setMargins(dp(3), 0, dp(3), 0);
@@ -728,6 +746,7 @@ public class MainActivity extends Activity implements Player.Listener {
             slotBtns[n] = load;
             load.setOnClickListener(v -> {
                 if (player.loadSlot(k)) {
+                    clearPreset();
                     refreshEq();
                     Toast.makeText(this, "設定" + (k + 1) + "にしました", Toast.LENGTH_SHORT).show();
                 } else {
@@ -777,7 +796,7 @@ public class MainActivity extends Activity implements Player.Listener {
                 public void onProgressChanged(SeekBar s, int p, boolean u) {
                     float g = (p - 120) / 10f;
                     val.setText(String.format(Locale.US, "%+.1f dB", g));
-                    if (u) { player.bands[k] = g; player.applyEq(); }
+                    if (u) { player.bands[k] = g; player.applyEq(); clearPreset(); }
                 }
                 public void onStartTrackingTouch(SeekBar s) { }
                 public void onStopTrackingTouch(SeekBar s) { player.saveEq(); }
@@ -793,6 +812,17 @@ public class MainActivity extends Activity implements Player.Listener {
     }
 
     Button[] slotBtns = new Button[3];
+
+    void updatePresetBtns() {
+        for (int i = 0; i < presetBtns.length; i++) if (presetBtns[i] != null) setOn(presetBtns[i], activePreset == i);
+    }
+
+    /** 自分でつまみを動かしたら、おまかせの「押されている状態」を解除 */
+    void clearPreset() {
+        if (activePreset < 0) return;
+        activePreset = -1;
+        updatePresetBtns();
+    }
 
     void refreshSlots() {
         for (int n = 0; n < 3; n++) {

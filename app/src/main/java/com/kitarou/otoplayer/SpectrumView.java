@@ -34,12 +34,14 @@ public class SpectrumView extends View {
         label.setColor(0xFF7FA6D6);
         label.setTextSize(11 * density);
         label.setTextAlign(Paint.Align.CENTER);
-        bg.setColor(0xFF0A1A3F);               // 背景：濃紺
+        bg.setColor(0xFF0A1A3F);
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
         super.onSizeChanged(w, h, ow, oh);
+        // 背景：下は少し明るい紺 → 上ほど濃紺
+        bg.setShader(new LinearGradient(0, h, 0, 0, 0xFF1F3F7A, 0xFF060F26, Shader.TileMode.CLAMP));
         // 棒：下はしっかりした青 → 上がるほど薄い青 → てっぺんは白
         bar.setShader(new LinearGradient(0, h, 0, 0,
                 new int[]{0xFF1565E0, 0xFF4FA3F7, 0xFFA8D8FF, 0xFFFFFFFF},
@@ -100,7 +102,7 @@ public class SpectrumView extends View {
     protected void onDraw(Canvas cv) {
         float w = getWidth(), h = getHeight();
         r.set(0, 0, w, h);
-        cv.drawRoundRect(r, 12 * density, 12 * density, bg);
+        cv.drawRect(r, bg);
         float pad = 8 * density, labelH = 16 * density;
         float top = pad, bottom = h - labelH - pad / 2;
         float area = bottom - top;
@@ -118,7 +120,7 @@ public class SpectrumView extends View {
             float x0 = pad + slot * b + gap / 2, x1 = pad + slot * (b + 1) - gap / 2;
             float y = bottom - area * level[b];
             r.set(x0, y, x1, bottom);
-            cv.drawRoundRect(r, 2 * density, 2 * density, bar);
+            cv.drawRect(r, bar);
             float py = bottom - area * peak[b];
             r.set(x0, py - 2.5f * density, x1, py);
             cv.drawRect(r, pk);

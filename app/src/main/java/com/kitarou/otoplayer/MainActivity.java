@@ -712,7 +712,7 @@ public class MainActivity extends Activity implements Player.Listener {
 
         // 音割れ防止
         protectSw = new Switch(this);
-        protectSw.setText("音割れ防止（強く上げた分だけ全体の音量を下げます）");
+        protectSw.setText("音割れ防止");
         protectSw.setTextColor(TXT);
         protectSw.setTextSize(14);
         protectSw.setPadding(0, dp(6), 0, dp(14));

@@ -93,7 +93,7 @@ public class SpectrumView extends View {
             label.setTextSize(14 * density);
             cv.drawText(message, w / 2, h / 2, label);
             label.setTextSize(11 * density);
-            label.setColor(0xFF9E9E9E);
+            label.setColor(0xFF7FA6D6);
             return;
         }
         float slot = (w - pad * 2) / N;

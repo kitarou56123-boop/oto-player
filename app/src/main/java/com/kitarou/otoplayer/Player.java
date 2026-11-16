@@ -348,6 +348,38 @@ public class Player {
         e.apply();
     }
 
+    // ---------- マイ設定（3つまで保存） ----------
+
+    public boolean slotUsed(int n) {
+        return ctx.getSharedPreferences("eq", 0).getBoolean("s" + n + "_used", false);
+    }
+
+    public void saveSlot(int n) {
+        SharedPreferences.Editor e = ctx.getSharedPreferences("eq", 0).edit();
+        for (int i = 0; i < BANDS; i++) e.putFloat("s" + n + "_b" + i, bands[i]);
+        e.putFloat("s" + n + "_bass", bass);
+        e.putBoolean("s" + n + "_protect", protect);
+        e.putBoolean("s" + n + "_used", true);
+        e.apply();
+    }
+
+    public boolean loadSlot(int n) {
+        SharedPreferences p = ctx.getSharedPreferences("eq", 0);
+        if (!p.getBoolean("s" + n + "_used", false)) return false;
+        for (int i = 0; i < BANDS; i++) bands[i] = p.getFloat("s" + n + "_b" + i, 0);
+        bass = p.getFloat("s" + n + "_bass", 0);
+        protect = p.getBoolean("s" + n + "_protect", true);
+        applyEq();
+        saveEq();
+        return true;
+    }
+
+    /** アナライザー用：標準エンジンで再生中ならその音の番号、それ以外は0（スマホ全体の音） */
+    public int audioSession() {
+        try { if (useAndroid && amp != null) return amp.getAudioSessionId(); } catch (Exception ignored) { }
+        return 0;
+    }
+
     float gain(int i) {
         return Math.max(-20f, Math.min(20f, bands[i] + BASS_WEIGHT[i] * bass));
     }

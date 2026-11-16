@@ -133,7 +133,7 @@ public class PlaybackService extends Service implements Player.Listener {
                 new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, CH)
                 .setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle(it != null ? it.title : "おとプレイヤー")
+                .setContentTitle(it != null ? it.title : "JBL")
                 .setContentText(it != null ? it.folder : "")
                 .setContentIntent(open)
                 .setOngoing(playing)

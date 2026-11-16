@@ -40,11 +40,13 @@ public class IndexBar extends View {
     OnPick listener;
     final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     int touched = -1;
+    final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public IndexBar(Context c) {
         super(c);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setFakeBoldText(true);
+        bgPaint.setColor(0xFF2C2C2C);
     }
 
     public void setOnPick(OnPick l) { listener = l; }
@@ -53,10 +55,12 @@ public class IndexBar extends View {
     protected void onDraw(Canvas cv) {
         float h = getHeight() - getPaddingTop() - getPaddingBottom();
         float step = h / KEYS.length;
-        paint.setTextSize(Math.min(step * 0.85f, getWidth() * 0.6f));
+        paint.setTextSize(Math.min(step * 1.05f, getWidth() * 0.5f));
+        cv.drawRoundRect(new android.graphics.RectF(2, 0, getWidth() - 2, getHeight()),
+                getWidth() / 2f, getWidth() / 2f, bgPaint);
         float x = getWidth() / 2f;
         for (int i = 0; i < KEYS.length; i++) {
-            paint.setColor(i == touched ? MainActivity.ACC : 0xFFBDBDBD);
+            paint.setColor(i == touched ? MainActivity.ACC : 0xFFFFFFFF);
             float y = getPaddingTop() + step * i + step / 2f - (paint.descent() + paint.ascent()) / 2f;
             cv.drawText(KEYS[i], x, y, paint);
         }
@@ -75,12 +79,10 @@ public class IndexBar extends View {
                 invalidate();
                 if (listener != null) listener.onPick(i, false);
             }
-            setBackgroundColor(0x33FFFFFF);
             return true;
         }
         if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
             touched = -1;
-            setBackgroundColor(0);
             invalidate();
             if (listener != null) listener.onPick(i, true);
             return true;

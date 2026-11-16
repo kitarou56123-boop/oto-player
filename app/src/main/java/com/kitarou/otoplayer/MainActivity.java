@@ -30,6 +30,9 @@ import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
+import android.app.AlertDialog;
+import android.media.audiofx.Visualizer;
 
 import org.videolan.libvlc.MediaPlayer;
 import org.videolan.libvlc.util.VLCVideoLayout;
@@ -84,6 +87,16 @@ public class MainActivity extends Activity implements Player.Listener {
     SeekBar bassBar;
     TextView bassVal;
     Switch protectSw;
+    SpectrumView spectrum;
+    Visualizer viz;
+    boolean started = false;
+    final Runnable decayer = new Runnable() {
+        @Override public void run() {
+            if (spectrum == null) return;
+            if (!player.isPlaying()) spectrum.decay();
+            spectrum.postDelayed(this, 50);
+        }
+    };
 
     int dp(float v) {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
@@ -109,6 +122,8 @@ public class MainActivity extends Activity implements Player.Listener {
         player.addListener(this);
         if (!attached && player.mp != null) { player.mp.attachViews(videoLayout, null, false, false); attached = true; }
         onPlayerChanged();
+        started = true;
+        updateViz();
     }
 
     @Override
@@ -124,6 +139,8 @@ public class MainActivity extends Activity implements Player.Listener {
 
     @Override
     protected void onStop() {
+        started = false;
+        stopViz();
         player.removeListener(this);
         if (attached && player.mp != null) { player.mp.detachViews(); attached = false; }
         super.onStop();
@@ -161,6 +178,7 @@ public class MainActivity extends Activity implements Player.Listener {
     public void onRequestPermissionsResult(int code, String[] p, int[] r) {
         super.onRequestPermissionsResult(code, p, r);
         if (code == 1 && hasFileAccess()) { permBox.setVisibility(View.GONE); scan(); }
+        if (code == 3) updateViz();
     }
 
     void scan() {
@@ -387,7 +405,7 @@ public class MainActivity extends Activity implements Player.Listener {
         list = new ListView(this);
         list.setAdapter(adapter);
         list.setDivider(null);
-        list.setPadding(0, 0, dp(30), 0);
+        list.setPadding(0, 0, dp(44), 0);
         list.setClipToPadding(false);
         list.setOnItemClickListener((parent, v, pos, id) -> {
             if (showingGroups) { group = groups.get(pos)[0]; search.setText(""); filter(); return; }
@@ -398,8 +416,8 @@ public class MainActivity extends Activity implements Player.Listener {
         listBox = new FrameLayout(this);
         listBox.addView(list, new FrameLayout.LayoutParams(-1, -1));
         indexBar = new IndexBar(this);
-        indexBar.setPadding(0, dp(4), 0, dp(4));
-        FrameLayout.LayoutParams ibp = new FrameLayout.LayoutParams(dp(30), -1, Gravity.END);
+        indexBar.setPadding(0, dp(2), 0, dp(2));
+        FrameLayout.LayoutParams ibp = new FrameLayout.LayoutParams(dp(42), -1, Gravity.END);
         listBox.addView(indexBar, ibp);
         bubble = text("", 40, 0xFF000000);
         bubble.setTypeface(Typeface.DEFAULT_BOLD);
@@ -527,6 +545,7 @@ public class MainActivity extends Activity implements Player.Listener {
         if (t != 0) backBtn.setVisibility(View.GONE);
         updateViewBtns();
         eqView.setVisibility(listMode ? View.GONE : View.VISIBLE);
+        updateViz();
         if (listMode) filter();
     }
 
@@ -551,6 +570,15 @@ public class MainActivity extends Activity implements Player.Listener {
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(dp(6), dp(10), dp(6), dp(10));
         sv.addView(col);
+
+        // アナライザー
+        TextView h0 = text("アナライザー", 20, ACC);
+        h0.setTypeface(Typeface.DEFAULT_BOLD);
+        col.addView(h0);
+        spectrum = new SpectrumView(this);
+        LinearLayout.LayoutParams spp = lp(-1, dp(150), 0);
+        spp.setMargins(0, dp(6), 0, dp(14));
+        col.addView(spectrum, spp);
 
         // 重低音
         TextView h1 = text("重低音", 20, ACC);
@@ -614,6 +642,50 @@ public class MainActivity extends Activity implements Player.Listener {
         }
         col.addView(pr);
 
+        // マイ設定
+        TextView hs = text("マイ設定（3つまで保存）", 20, ACC);
+        hs.setTypeface(Typeface.DEFAULT_BOLD);
+        col.addView(hs);
+        TextView hsn = text("「保存」で今の音を記録、「設定1」などを押すと呼び出します。", 13, SUB);
+        hsn.setPadding(0, dp(2), 0, dp(4));
+        col.addView(hsn);
+        for (int n = 0; n < 3; n++) {
+            final int k = n;
+            LinearLayout row = new LinearLayout(this);
+            row.setPadding(0, dp(4), 0, dp(4));
+            Button load = button("", 16);
+            slotBtns[n] = load;
+            load.setOnClickListener(v -> {
+                if (player.loadSlot(k)) {
+                    refreshEq();
+                    Toast.makeText(this, "設定" + (k + 1) + "にしました", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, "設定" + (k + 1) + "はまだ保存されていません", Toast.LENGTH_SHORT).show();
+                }
+            });
+            Button save = button("保存", 16);
+            save.setOnClickListener(v -> new AlertDialog.Builder(this)
+                    .setMessage("今の音を「設定" + (k + 1) + "」に保存しますか？"
+                            + (player.slotUsed(k) ? "\n（前に保存した内容は上書きされます）" : ""))
+                    .setPositiveButton("保存する", (d, w) -> {
+                        player.saveSlot(k);
+                        refreshSlots();
+                        Toast.makeText(this, "設定" + (k + 1) + "に保存しました", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("やめる", null)
+                    .show());
+            LinearLayout.LayoutParams p1 = lp(0, dp(50), 1);
+            p1.setMargins(dp(3), 0, dp(3), 0);
+            LinearLayout.LayoutParams p2 = lp(dp(96), dp(50), 0);
+            p2.setMargins(dp(3), 0, dp(3), 0);
+            row.addView(load, p1);
+            row.addView(save, p2);
+            col.addView(row);
+        }
+        refreshSlots();
+        View sp2 = new View(this);
+        col.addView(sp2, lp(-1, dp(14), 0));
+
         // 10バンド
         TextView h3 = text("イコライザー（10バンド）", 20, ACC);
         h3.setTypeface(Typeface.DEFAULT_BOLD);
@@ -652,6 +724,72 @@ public class MainActivity extends Activity implements Player.Listener {
         return sv;
     }
 
+    Button[] slotBtns = new Button[3];
+
+    void refreshSlots() {
+        for (int n = 0; n < 3; n++) {
+            if (slotBtns[n] == null) continue;
+            boolean used = player.slotUsed(n);
+            slotBtns[n].setText("設定" + (n + 1) + (used ? "" : "（空き）"));
+            slotBtns[n].setTextColor(used ? TXT : SUB);
+        }
+    }
+
+    // ---------- アナライザー ----------
+
+    void updateViz() {
+        if (started && tab == 2) startViz(); else stopViz();
+    }
+
+    void startViz() {
+        if (spectrum == null) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            spectrum.setMessage("アナライザーを出すには許可が必要です");
+            if (!askedMic) {
+                askedMic = true;
+                new AlertDialog.Builder(this)
+                        .setMessage("アナライザーで、いま鳴っている音の強さを表示するために「音声の録音」の許可が必要です。\n実際に録音したり、マイクの音を使ったりはしません。")
+                        .setPositiveButton("次へ", (d, w) -> requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 3))
+                        .setNegativeButton("使わない", null)
+                        .show();
+            }
+            return;
+        }
+        int session = player.audioSession();
+        if (viz != null && vizSession == session) return;
+        stopViz();
+        try {
+            viz = new Visualizer(session);
+            viz.setEnabled(false);
+            viz.setCaptureSize(Visualizer.getCaptureSizeRange()[1]);
+            viz.setDataCaptureListener(new Visualizer.OnDataCaptureListener() {
+                public void onWaveFormDataCapture(Visualizer v, byte[] w, int r) { }
+                public void onFftDataCapture(Visualizer v, byte[] f, int r) {
+                    if (player.isPlaying()) spectrum.setFft(f, r);
+                }
+            }, Visualizer.getMaxCaptureRate(), false, true);
+            viz.setEnabled(true);
+            vizSession = session;
+            spectrum.setMessage(null);
+            spectrum.removeCallbacks(decayer);
+            spectrum.post(decayer);
+        } catch (Throwable t) {
+            viz = null;
+            spectrum.setMessage("このスマホではアナライザーを表示できません");
+        }
+    }
+
+    void stopViz() {
+        if (spectrum != null) spectrum.removeCallbacks(decayer);
+        if (viz != null) {
+            try { viz.setEnabled(false); viz.release(); } catch (Throwable ignored) { }
+            viz = null;
+        }
+    }
+
+    boolean askedMic = false;
+    int vizSession = -1;
+
     void refreshEq() {
         bassBar.setProgress(Math.round(player.bass * 10));
         bassVal.setText(String.format(Locale.US, "+%.1f dB", player.bass));
@@ -688,7 +826,8 @@ public class MainActivity extends Activity implements Player.Listener {
             timeText.setText(fmt(t) + " / " + fmt(len) + (st.isEmpty() ? "" : "   " + st));
         }
         if (it != lastItem) { lastItem = it; adapter.notifyDataSetChanged(); }
-        String err = player.lastError;
+        if (viz != null && vizSession != player.audioSession()) updateViz();
+                String err = player.lastError;
         if (err != null && !err.equals(lastErrShown)) {
             android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show();
         }

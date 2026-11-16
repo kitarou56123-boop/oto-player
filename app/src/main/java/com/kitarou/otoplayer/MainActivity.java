@@ -652,11 +652,40 @@ public class MainActivity extends Activity implements Player.Listener {
         col.setPadding(dp(6), dp(10), dp(6), dp(10));
         sv.addView(col);
 
-        // アナライザー
+        // アナライザー／イコライザーの切り替え
+        LinearLayout modeRow = new LinearLayout(this);
+        Button mAna = button("アナライザー", 15);
+        Button mEq = button("イコライザー", 15);
+        LinearLayout.LayoutParams mp1 = lp(0, dp(42), 1), mp2 = lp(0, dp(42), 1);
+        mp1.setMargins(0, 0, dp(3), 0);
+        mp2.setMargins(dp(3), 0, 0, 0);
+        modeRow.addView(mAna, mp1);
+        modeRow.addView(mEq, mp2);
+        col.addView(modeRow);
         spectrum = new SpectrumView(this);
-        LinearLayout.LayoutParams spp = lp(-1, dp(150), 0);
+        LinearLayout.LayoutParams spp = lp(-1, dp(220), 0);
         spp.setMargins(0, dp(6), 0, dp(14));
         col.addView(spectrum, spp);
+        boolean eqStart = getPreferences(MODE_PRIVATE).getBoolean("eqMode", false);
+        Runnable[] setMode = new Runnable[2];
+        setMode[0] = () -> { spectrum.setEqMode(false); setOn(mAna, true); setOn(mEq, false);
+            getPreferences(MODE_PRIVATE).edit().putBoolean("eqMode", false).apply(); };
+        setMode[1] = () -> { spectrum.setEqMode(true); setOn(mAna, false); setOn(mEq, true);
+            getPreferences(MODE_PRIVATE).edit().putBoolean("eqMode", true).apply(); };
+        mAna.setOnClickListener(v -> setMode[0].run());
+        mEq.setOnClickListener(v -> setMode[1].run());
+        setMode[eqStart ? 1 : 0].run();
+        spectrum.setEqListener(new SpectrumView.EqListener() {
+            public void onEq(int c, float db) {
+                // 8本のつまみ → 10バンド（いちばん低い・高いつまみは2つずつ動かす）
+                if (c == 0) { player.bands[0] = db; player.bands[1] = db; }
+                else if (c == 7) { player.bands[8] = db; player.bands[9] = db; }
+                else player.bands[c + 1] = db;
+                player.applyEq();
+                clearPreset();
+            }
+            public void onEqDone() { player.saveEq(); }
+        });
 
         // 重低音
         TextView h1 = text("Bass Plus", 20, ACC);
@@ -776,35 +805,6 @@ public class MainActivity extends Activity implements Player.Listener {
         View sp2 = new View(this);
         col.addView(sp2, lp(-1, dp(14), 0));
 
-        // 10バンド
-        int n = Math.min(Player.BANDS, MediaPlayer.Equalizer.getBandCount());
-        for (int i = 0; i < n; i++) {
-            float f = MediaPlayer.Equalizer.getBandFrequency(i);
-            String label = f >= 1000 ? (f % 1000 == 0 ? (int) (f / 1000) + "kHz" : String.format(Locale.US, "%.1fkHz", f / 1000)) : (int) f + "Hz";
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            TextView lb = text(label, 14, SUB);
-            row.addView(lb, lp(dp(64), -2, 0));
-            SeekBar sb = new SeekBar(this);
-            sb.setMax(240);            // -12〜+12dB
-            TextView val = text("", 14, TXT);
-            val.setGravity(Gravity.END);
-            row.addView(sb, lp(0, dp(46), 1));
-            row.addView(val, lp(dp(72), -2, 0));
-            final int k = i;
-            sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-                public void onProgressChanged(SeekBar s, int p, boolean u) {
-                    float g = (p - 120) / 10f;
-                    val.setText(String.format(Locale.US, "%+.1f dB", g));
-                    if (u) { player.bands[k] = g; player.applyEq(); clearPreset(); }
-                }
-                public void onStartTrackingTouch(SeekBar s) { }
-                public void onStopTrackingTouch(SeekBar s) { player.saveEq(); }
-            });
-            bandBars[i] = sb;
-            bandVals[i] = val;
-            col.addView(row);
-        }
         TextView note = text("\nすべて0（フラット）にすると、音を一切加工せずに再生します。", 13, SUB);
         col.addView(note);
         refreshEq();
@@ -892,6 +892,7 @@ public class MainActivity extends Activity implements Player.Listener {
         bassBar.setProgress(Math.round(player.bass * 10));
         bassVal.setText(String.format(Locale.US, "+%.1f dB", player.bass));
         protectSw.setChecked(player.protect);
+        if (spectrum != null) spectrum.setBands(player.bands);
         for (int i = 0; i < Player.BANDS; i++) {
             if (bandBars[i] == null) continue;
             bandBars[i].setProgress(Math.round(player.bands[i] * 10) + 120);

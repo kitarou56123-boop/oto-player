@@ -2,7 +2,9 @@ package com.kitarou.otoplayer;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Shader;
 import android.graphics.RectF;
 import android.view.View;
 
@@ -27,12 +29,19 @@ public class SpectrumView extends View {
         super(c);
         density = c.getResources().getDisplayMetrics().density;
         for (int i = 0; i <= N; i++) edges[i] = (float) (LO * Math.pow(HI / LO, i / (double) N));
-        bar.setColor(MainActivity.ACC);
-        pk.setColor(0xFFFFFFFF);
-        label.setColor(0xFF9E9E9E);
+        bar.setColor(0xFF9AD8FF);              // 薄いブルー
+        pk.setColor(0xFFE3F5FF);               // てっぺんの線（さらに薄い青）
+        label.setColor(0xFF7FA6D6);
         label.setTextSize(11 * density);
         label.setTextAlign(Paint.Align.CENTER);
-        bg.setColor(0xFF1E1E1E);
+        bg.setColor(0xFF0A1A3F);               // 背景：濃紺
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int ow, int oh) {
+        super.onSizeChanged(w, h, ow, oh);
+        // 棒：下は少し濃い水色 → 上ほど薄いブルー
+        bar.setShader(new LinearGradient(0, h, 0, 0, 0xFF5BB8F0, 0xFFC8ECFF, Shader.TileMode.CLAMP));
     }
 
     public void setMessage(String m) { message = m; postInvalidate(); }
@@ -80,7 +89,7 @@ public class SpectrumView extends View {
         float top = pad, bottom = h - labelH - pad / 2;
         float area = bottom - top;
         if (message != null) {
-            label.setColor(0xFFBDBDBD);
+            label.setColor(0xFFB8DCFF);
             label.setTextSize(14 * density);
             cv.drawText(message, w / 2, h / 2, label);
             label.setTextSize(11 * density);

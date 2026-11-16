@@ -413,6 +413,18 @@ public class Player {
         return Math.max(-20f, Math.min(20f, bands[i] + BASS_WEIGHT[i] * bass));
     }
 
+    /** 好きな周波数での強さ（となりのバンドの間をなめらかにつなぐ） */
+    float gainAt(float hz) {
+        if (hz <= BAND_HZ[0]) return gain(0);
+        for (int i = 0; i < BANDS - 1; i++) {
+            if (hz <= BAND_HZ[i + 1]) {
+                double t = Math.log(hz / BAND_HZ[i]) / Math.log(BAND_HZ[i + 1] / BAND_HZ[i]);
+                return (float) (gain(i) * (1 - t) + gain(i + 1) * t);
+            }
+        }
+        return gain(BANDS - 1);
+    }
+
     public void applyEq() {
         boolean flat = bass == 0;
         for (float b : bands) if (b != 0) flat = false;
@@ -449,10 +461,7 @@ public class Player {
             short nb = aeq.getNumberOfBands();
             for (short b = 0; b < nb; b++) {
                 float hz = aeq.getCenterFreq(b) / 1000f;
-                int best = 0;
-                for (int i = 1; i < BANDS; i++)
-                    if (Math.abs(Math.log(BAND_HZ[i] / hz)) < Math.abs(Math.log(BAND_HZ[best] / hz))) best = i;
-                int mb = Math.round(gain(best) * 100);
+                int mb = Math.round(gainAt(hz) * 100);
                 mb = Math.max(range[0], Math.min(range[1], mb));
                 aeq.setBandLevel(b, (short) mb);
             }

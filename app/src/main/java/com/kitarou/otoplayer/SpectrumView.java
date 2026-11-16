@@ -25,7 +25,7 @@ public class SpectrumView extends View {
 
     /** イコライザーのつまみ（8本） */
     static final int EQN = 8;
-    static final String[] EQ_LABEL = {"60", "125", "250", "500", "1k", "2k", "4k", "8k"};
+    static final String[] EQ_LABEL = {"60", "310", "600", "1k", "3k", "6k", "12k", "16k"};
     static final float EQ_MAX = 12f;
 
     public interface EqListener {

@@ -1,7 +1,12 @@
 package com.kitarou.otoplayer;
 
 import android.content.Context;
+import android.database.Cursor;
 import android.os.Environment;
+import android.provider.MediaStore;
+
+import java.util.HashMap;
+import java.util.Map;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -42,10 +47,41 @@ public class MediaScanner {
         }
         Result r = new Result();
         for (String root : roots) walk(new File(root), r, 0, true);
+        readTags(c, r.audio);
         java.util.Comparator<MediaItem> cmp = (a, b) -> a.title.compareToIgnoreCase(b.title);
         r.audio.sort(cmp);
         r.video.sort(cmp);
         return r;
+    }
+
+    /** スマホが記録している曲名・アーティスト・アルバムを読み込む */
+    @SuppressWarnings("deprecation")
+    static void readTags(Context c, List<MediaItem> items) {
+        Map<String, String[]> tags = new HashMap<>();
+        String[] cols = {MediaStore.Audio.Media.DATA, MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM};
+        try (Cursor cur = c.getContentResolver().query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, cols, null, null, null)) {
+            if (cur != null) {
+                while (cur.moveToNext()) {
+                    String path = cur.getString(0);
+                    if (path != null) tags.put(path, new String[]{cur.getString(1), cur.getString(2), cur.getString(3)});
+                }
+            }
+        } catch (Exception ignored) { }
+        for (MediaItem it : items) {
+            String[] t = tags.get(it.file.getAbsolutePath());
+            if (t == null) continue;
+            if (ok(t[0])) it.title = t[0].trim();
+            if (ok(t[1])) it.artist = t[1].trim();
+            if (ok(t[2]) && !t[2].equals(it.folder)) it.album = t[2].trim();
+            else if (ok(t[2])) it.album = t[2].trim();
+            it.updateKey();
+        }
+    }
+
+    static boolean ok(String s) {
+        return s != null && !s.trim().isEmpty() && !s.equals("<unknown>");
     }
 
     private static void walk(File dir, Result r, int depth, boolean top) {

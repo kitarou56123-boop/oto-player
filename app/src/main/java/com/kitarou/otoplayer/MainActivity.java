@@ -63,6 +63,13 @@ public class MainActivity extends Activity implements Player.Listener {
     Button vPlay;
 
     int tab = 0; // 0=音楽 1=動画 2=音質
+    int view = 0; // 音楽の見方 0=曲 1=アーティスト 2=アルバム 3=フォルダ
+    String group = null;          // 選んだアーティスト等
+    List<String[]> groups = new ArrayList<>();
+    boolean showingGroups = false;
+    LinearLayout viewRow;
+    Button[] viewBtns = new Button[4];
+    Button backBtn;
     List<MediaItem> allAudio = new ArrayList<>(), allVideo = new ArrayList<>();
     List<MediaItem> shown = new ArrayList<>();
     Adapter adapter = new Adapter();
@@ -123,6 +130,7 @@ public class MainActivity extends Activity implements Player.Listener {
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         if (videoBox.getVisibility() == View.VISIBLE) { closeVideo(); return; }
+        if (tab == 0 && group != null) { group = null; filter(); return; }
         moveTaskToBack(true);   // 戻るで閉じても再生を続ける
     }
 
@@ -167,12 +175,46 @@ public class MainActivity extends Activity implements Player.Listener {
         }).start();
     }
 
+    String groupOf(MediaItem it) {
+        if (view == 1) return it.artistOr();
+        if (view == 2) return it.albumOr();
+        return it.folder;
+    }
+
     void filter() {
         String q = search.getText().toString().trim().toLowerCase();
-        List<MediaItem> src = tab == 1 ? allVideo : allAudio;
+        boolean music = tab == 0;
+        List<MediaItem> src = music ? allAudio : allVideo;
         shown = new ArrayList<>();
-        for (MediaItem it : src) if (q.isEmpty() || it.searchKey.contains(q)) shown.add(it);
+        groups = new ArrayList<>();
+        showingGroups = music && view != 0 && group == null;
+        if (showingGroups) {
+            java.util.TreeMap<String, Integer> m = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+            for (MediaItem it : src) {
+                String g = groupOf(it);
+                if (!q.isEmpty() && !g.toLowerCase().contains(q) && !it.searchKey.contains(q)) continue;
+                Integer c = m.get(g);
+                m.put(g, c == null ? 1 : c + 1);
+            }
+            for (java.util.Map.Entry<String, Integer> e : m.entrySet())
+                groups.add(new String[]{e.getKey(), e.getValue() + "曲"});
+        } else {
+            for (MediaItem it : src) {
+                if (music && view != 0 && !groupOf(it).equals(group)) continue;
+                if (q.isEmpty() || it.searchKey.contains(q)) shown.add(it);
+            }
+            if (music && view == 2) {   // アルバムはファイル名順（曲順）に
+                shown.sort((a, b) -> a.file.getName().compareToIgnoreCase(b.file.getName()));
+            }
+        }
+        backBtn.setVisibility(music && group != null ? View.VISIBLE : View.GONE);
+        if (group != null) backBtn.setText("← " + group);
         adapter.notifyDataSetChanged();
+        list.setSelection(0);
+    }
+
+    void updateViewBtns() {
+        for (int i = 0; i < 4; i++) setOn(viewBtns[i], view == i);
     }
 
     // ---------- 画面づくり ----------
@@ -267,7 +309,7 @@ public class MainActivity extends Activity implements Player.Listener {
         searchRow.setOrientation(LinearLayout.HORIZONTAL);
         searchRow.setPadding(dp(3), dp(8), dp(3), 0);
         search = new EditText(this);
-        search.setHint("曲名・フォルダ名で検索");
+        search.setHint("曲名・アーティスト・アルバムで検索");
         search.setHintTextColor(SUB);
         search.setTextColor(TXT);
         search.setTextSize(16);
@@ -290,6 +332,27 @@ public class MainActivity extends Activity implements Player.Listener {
         reload.setOnClickListener(v -> { if (hasFileAccess()) scan(); });
         mainCol.addView(searchRow);
 
+        viewRow = new LinearLayout(this);
+        viewRow.setPadding(0, dp(8), 0, 0);
+        String[] vn = {"曲", "アーティスト", "アルバム", "フォルダ"};
+        for (int i = 0; i < 4; i++) {
+            Button b = button(vn[i], 14);
+            final int k = i;
+            b.setOnClickListener(v -> { view = k; group = null; search.setText(""); updateViewBtns(); filter(); });
+            LinearLayout.LayoutParams p = lp(0, dp(42), i == 1 ? 1.4f : 1);
+            p.setMargins(dp(3), 0, dp(3), 0);
+            viewRow.addView(b, p);
+            viewBtns[i] = b;
+        }
+        mainCol.addView(viewRow);
+
+        backBtn = button("← 一覧に戻る", 15);
+        backBtn.setVisibility(View.GONE);
+        backBtn.setOnClickListener(v -> { group = null; filter(); });
+        LinearLayout.LayoutParams bbp = lp(-1, dp(42), 0);
+        bbp.setMargins(dp(3), dp(8), dp(3), 0);
+        mainCol.addView(backBtn, bbp);
+
         status = text("", 13, SUB);
         status.setPadding(dp(6), dp(6), 0, dp(2));
         mainCol.addView(status);
@@ -298,7 +361,9 @@ public class MainActivity extends Activity implements Player.Listener {
         list = new ListView(this);
         list.setAdapter(adapter);
         list.setDivider(null);
-        list.setOnItemClickListener((parent, view, pos, id) -> {
+        list.setFastScrollEnabled(true);
+        list.setOnItemClickListener((parent, v, pos, id) -> {
+            if (showingGroups) { group = groups.get(pos)[0]; search.setText(""); filter(); return; }
             MediaItem it = shown.get(pos);
             if (it.video) openVideo();
             player.play(shown, pos);
@@ -404,6 +469,9 @@ public class MainActivity extends Activity implements Player.Listener {
         list.setVisibility(listMode ? View.VISIBLE : View.GONE);
         searchRow.setVisibility(listMode ? View.VISIBLE : View.GONE);
         status.setVisibility(listMode ? View.VISIBLE : View.GONE);
+        viewRow.setVisibility(t == 0 ? View.VISIBLE : View.GONE);
+        if (t != 0) backBtn.setVisibility(View.GONE);
+        updateViewBtns();
         eqView.setVisibility(listMode ? View.GONE : View.VISIBLE);
         if (listMode) filter();
     }
@@ -554,7 +622,7 @@ public class MainActivity extends Activity implements Player.Listener {
     public void onPlayerChanged() {
         MediaItem it = player.current();
         boolean playing = player.isPlaying();
-        nowTitle.setText(it != null ? it.title : "曲を選んでください");
+        nowTitle.setText(it == null ? "曲を選んでください" : (it.artist.isEmpty() ? it.title : it.title + "  ／  " + it.artist));
         btnPlay.setText(playing ? "⏸" : "▶");
         vPlay.setText(playing ? "⏸" : "▶");
         long len = player.length(), t = player.time();
@@ -572,8 +640,8 @@ public class MainActivity extends Activity implements Player.Listener {
     // ---------- 一覧の表示 ----------
 
     class Adapter extends BaseAdapter {
-        public int getCount() { return shown.size(); }
-        public Object getItem(int i) { return shown.get(i); }
+        public int getCount() { return showingGroups ? groups.size() : shown.size(); }
+        public Object getItem(int i) { return showingGroups ? groups.get(i) : shown.get(i); }
         public long getItemId(int i) { return i; }
 
         public View getView(int i, View v, ViewGroup parent) {
@@ -597,12 +665,19 @@ public class MainActivity extends Activity implements Player.Listener {
                 t1 = tv[0];
                 t2 = tv[1];
             }
+            if (showingGroups) {
+                String[] g = groups.get(i);
+                t1.setText(g[0]);
+                t1.setTextColor(TXT);
+                t2.setText(g[1]);
+                return row;
+            }
             MediaItem it = shown.get(i);
             MediaItem cur = player.current();
             boolean now = cur != null && cur.file.equals(it.file);
             t1.setText((now ? "♪ " : "") + it.title);
             t1.setTextColor(now ? ACC : TXT);
-            t2.setText(it.folder);
+            t2.setText(it.video ? it.folder : it.sub());
             return row;
         }
     }

@@ -330,9 +330,9 @@ public class MainActivity extends Activity implements Player.Listener {
         // タブ
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        tabMusic = button("♪ 音楽", 17);
-        tabVideo = button("▶ 動画", 17);
-        tabEq = button("音質", 17);
+        tabMusic = button("♪ Music", 17);
+        tabVideo = button("▶ Video", 17);
+        tabEq = button("Sound", 17);
         for (Button b : new Button[]{tabMusic, tabVideo, tabEq}) {
             LinearLayout.LayoutParams p = lp(0, dp(48), 1);
             p.setMargins(dp(3), 0, dp(3), 0);
@@ -654,8 +654,8 @@ public class MainActivity extends Activity implements Player.Listener {
 
         // アナライザー／イコライザーの切り替え
         LinearLayout modeRow = new LinearLayout(this);
-        Button mAna = button("アナライザー", 15);
-        Button mEq = button("イコライザー", 15);
+        Button mAna = button("Analyzer", 15);
+        Button mEq = button("Equalizer", 15);
         LinearLayout.LayoutParams mp1 = lp(0, dp(42), 1), mp2 = lp(0, dp(42), 1);
         mp1.setMargins(0, 0, dp(3), 0);
         mp2.setMargins(dp(3), 0, 0, 0);

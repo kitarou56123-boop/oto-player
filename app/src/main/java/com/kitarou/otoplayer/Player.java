@@ -47,6 +47,8 @@ public class Player {
     int index = -1;
     boolean loaded = false;
     int errCount = 0;
+    /** 標準の仕組みで鳴らせなかった曲だけ、VLCで再挑戦中 */
+    boolean vlcFallback = false;
     /** 再生できなかった時のお知らせ（画面に出す） */
     public String lastError = null;
     AudioFocusRequest focusReq;
@@ -167,10 +169,9 @@ public class Player {
         if (it == null) return;
         releaseAndroid();
         main.removeCallbacks(watchdog);
-        if (mp == null) {
-            if (!it.video) startAndroid();
-            return;
-        }
+        vlcFallback = false;
+        if (!it.video) { startAndroid(); return; }   // 音楽は標準の仕組みですぐ再生
+        if (mp == null) return;
         try {
             Media m = new Media(vlc, it.file.getAbsolutePath());
             if (!it.video) m.addOption(":no-video");
@@ -188,6 +189,29 @@ public class Player {
         fire();
     }
 
+    /** 標準の仕組みで鳴らせない形式の曲だけ、VLCで鳴らす */
+    boolean tryVlcMusic(MediaItem it) {
+        if (mp == null || vlcFallback) return false;
+        vlcFallback = true;
+        releaseAndroid();
+        try {
+            Media m = new Media(vlc, it.file.getAbsolutePath());
+            m.addOption(":no-video");
+            mp.setMedia(m);
+            m.release();
+            applyEq();
+            requestFocus();
+            mp.play();
+            loaded = true;
+            lastError = null;
+            PlaybackService.ensure(ctx);
+            fire();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     void startAndroid() {
         MediaItem it = current();
         if (it == null) return;
@@ -203,6 +227,7 @@ public class Player {
             amp.setOnCompletionListener(x -> main.post(this::onEnd));
             amp.setOnErrorListener((x, what, extra) -> {
                 main.post(() -> {
+                    if (tryVlcMusic(it)) return;
                     lastError = "再生できませんでした：" + it.file.getName();
                     releaseAndroid();
                     loaded = false;
@@ -223,6 +248,7 @@ public class Player {
             main.removeCallbacks(ticker);
             main.post(ticker);
         } catch (Exception e) {
+            if (tryVlcMusic(it)) return;
             releaseAndroid();
             loaded = false;
             lastError = "再生できませんでした：" + it.file.getName();
@@ -262,9 +288,6 @@ public class Player {
         } else {
             requestFocus();
             mp.play();
-            MediaItem it = current();
-            main.removeCallbacks(watchdog);
-            if (it != null && !it.video) main.postDelayed(watchdog, 3000);
         }
         fire();
     }
@@ -307,7 +330,13 @@ public class Player {
 
     private void onVlcError() {
         MediaItem it = current();
-        if (it != null && !it.video) { startAndroid(); return; }   // 音楽は標準の仕組みで再挑戦
+        if (it != null && !it.video) {   // VLCでもだめだった曲は飛ばす
+            lastError = "再生できませんでした：" + it.file.getName();
+            loaded = false;
+            errCount++;
+            if (errCount < Math.min(queue.size(), 5)) next(); else fire();
+            return;
+        }
         lastError = "再生できませんでした：" + (it != null ? it.file.getName() : "");
         loaded = false;
         fire();

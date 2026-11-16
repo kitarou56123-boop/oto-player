@@ -421,6 +421,7 @@ public class MainActivity extends Activity implements Player.Listener {
             MediaItem it = shown.get(pos);
             if (it.video) openVideo();
             player.play(shown, pos);
+            if (!it.video) setTab(2);   // 曲を選んだらSound画面へ
         });
         listBox = new FrameLayout(this);
         listBox.addView(list, new FrameLayout.LayoutParams(-1, -1));

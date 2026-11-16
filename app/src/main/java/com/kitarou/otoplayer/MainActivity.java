@@ -51,6 +51,9 @@ public class MainActivity extends Activity implements Player.Listener {
     LinearLayout searchRow;
     EditText search;
     ListView list;
+    FrameLayout listBox;
+    IndexBar indexBar;
+    TextView bubble;
     ScrollView eqView;
     TextView status, nowTitle, timeText;
     SeekBar seek;
@@ -213,6 +216,29 @@ public class MainActivity extends Activity implements Player.Listener {
         list.setSelection(0);
     }
 
+    String labelAt(int i) {
+        return showingGroups ? groups.get(i)[0] : shown.get(i).title;
+    }
+
+    /** 索引の文字の所へ一覧を飛ばす */
+    void jumpTo(int sec) {
+        int n = adapter.getCount();
+        if (n == 0) return;
+        int best = -1;
+        for (int i = 0; i < n; i++) {
+            if (IndexBar.sectionOf(labelAt(i)) == sec) { best = i; break; }
+        }
+        if (best < 0) {   // その文字が無ければ、その次の文字の先頭へ
+            int bestSec = Integer.MAX_VALUE;
+            for (int i = 0; i < n; i++) {
+                int s2 = IndexBar.sectionOf(labelAt(i));
+                if (s2 > sec && s2 < bestSec) { bestSec = s2; best = i; }
+            }
+        }
+        if (best < 0) best = n - 1;
+        list.setSelection(best);
+    }
+
     void updateViewBtns() {
         for (int i = 0; i < 4; i++) setOn(viewBtns[i], view == i);
     }
@@ -361,14 +387,36 @@ public class MainActivity extends Activity implements Player.Listener {
         list = new ListView(this);
         list.setAdapter(adapter);
         list.setDivider(null);
-        list.setFastScrollEnabled(true);
+        list.setPadding(0, 0, dp(30), 0);
+        list.setClipToPadding(false);
         list.setOnItemClickListener((parent, v, pos, id) -> {
             if (showingGroups) { group = groups.get(pos)[0]; search.setText(""); filter(); return; }
             MediaItem it = shown.get(pos);
             if (it.video) openVideo();
             player.play(shown, pos);
         });
-        mainCol.addView(list, lp(-1, 0, 1));
+        listBox = new FrameLayout(this);
+        listBox.addView(list, new FrameLayout.LayoutParams(-1, -1));
+        indexBar = new IndexBar(this);
+        indexBar.setPadding(0, dp(4), 0, dp(4));
+        FrameLayout.LayoutParams ibp = new FrameLayout.LayoutParams(dp(30), -1, Gravity.END);
+        listBox.addView(indexBar, ibp);
+        bubble = text("", 40, 0xFF000000);
+        bubble.setTypeface(Typeface.DEFAULT_BOLD);
+        bubble.setGravity(Gravity.CENTER);
+        GradientDrawable bub = new GradientDrawable();
+        bub.setColor(ACC);
+        bub.setCornerRadius(dp(16));
+        bubble.setBackground(bub);
+        bubble.setVisibility(View.GONE);
+        listBox.addView(bubble, new FrameLayout.LayoutParams(dp(84), dp(84), Gravity.CENTER));
+        indexBar.setOnPick((sec, done) -> {
+            if (done) { bubble.setVisibility(View.GONE); return; }
+            bubble.setText(IndexBar.KEYS[sec]);
+            bubble.setVisibility(View.VISIBLE);
+            jumpTo(sec);
+        });
+        mainCol.addView(listBox, lp(-1, 0, 1));
 
         // 音質（イコライザー）
         eqView = buildEq();
@@ -402,7 +450,13 @@ public class MainActivity extends Activity implements Player.Listener {
         setOn(btnPlay, true);
         prev.setOnClickListener(v -> player.prev());
         next.setOnClickListener(v -> player.next());
-        btnPlay.setOnClickListener(v -> player.toggle());
+        btnPlay.setOnClickListener(v -> {
+            if (player.current() == null) {
+                if (!shown.isEmpty()) player.play(shown, 0);
+                return;
+            }
+            player.toggle();
+        });
         float[] ws = {1, 1.4f, 1};
         Button[] bs = {prev, btnPlay, next};
         for (int i = 0; i < 3; i++) {
@@ -466,7 +520,7 @@ public class MainActivity extends Activity implements Player.Listener {
         setOn(tabVideo, t == 1);
         setOn(tabEq, t == 2);
         boolean listMode = t != 2;
-        list.setVisibility(listMode ? View.VISIBLE : View.GONE);
+        listBox.setVisibility(listMode ? View.VISIBLE : View.GONE);
         searchRow.setVisibility(listMode ? View.VISIBLE : View.GONE);
         status.setVisibility(listMode ? View.VISIBLE : View.GONE);
         viewRow.setVisibility(t == 0 ? View.VISIBLE : View.GONE);
@@ -633,7 +687,14 @@ public class MainActivity extends Activity implements Player.Listener {
             timeText.setText(fmt(t) + " / " + fmt(len));
         }
         if (it != lastItem) { lastItem = it; adapter.notifyDataSetChanged(); }
+        String err = player.lastError;
+        if (err != null && !err.equals(lastErrShown)) {
+            android.widget.Toast.makeText(this, err, android.widget.Toast.LENGTH_LONG).show();
+        }
+        lastErrShown = err;
     }
+
+    String lastErrShown = null;
 
     MediaItem lastItem = null;
 

@@ -2,6 +2,9 @@ package com.kitarou.otoplayer;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -38,6 +41,10 @@ public class Player {
     List<MediaItem> queue = new ArrayList<>();
     int index = -1;
     boolean loaded = false;
+    int errCount = 0;
+    /** 再生できなかった時のお知らせ（画面に出す） */
+    public String lastError = null;
+    AudioFocusRequest focusReq;
 
     // 音質設定
     public final float[] bands = new float[BANDS];
@@ -55,7 +62,10 @@ public class Player {
             if (ev.type == MediaPlayer.Event.EndReached) {
                 main.post(this::onEnd);
             } else if (ev.type == MediaPlayer.Event.EncounteredError) {
-                main.post(this::next);
+                main.post(this::onError);
+            } else if (ev.type == MediaPlayer.Event.Playing) {
+                errCount = 0;
+                lastError = null;
             }
             fire();
         });
@@ -93,6 +103,7 @@ public class Player {
         mp.setMedia(m);
         m.release();
         applyEq();
+        requestFocus();
         mp.play();
         loaded = true;
         PlaybackService.ensure(ctx);
@@ -100,10 +111,47 @@ public class Player {
     }
 
     public void toggle() {
-        if (mp.isPlaying()) mp.pause();
-        else if (!loaded) start();
-        else mp.play();
+        if (mp.isPlaying()) { mp.pause(); fire(); return; }
+        if (current() == null) return;
+        int st = mp.getPlayerState();
+        boolean dead = st == Media.State.NothingSpecial || st == Media.State.Stopped
+                || st == Media.State.Ended || st == Media.State.Error;
+        if (!loaded || dead) {
+            errCount = 0;
+            start();               // 止まっている・終わっている時は最初から読み込み直す
+        } else {
+            requestFocus();
+            mp.play();
+        }
         fire();
+    }
+
+    private void onError() {
+        MediaItem it = current();
+        lastError = "再生できませんでした：" + (it != null ? it.file.getName() : "");
+        loaded = false;
+        errCount++;
+        // 次の曲へ（ただし全部だめな時に回り続けないように）
+        if (it != null && !it.video && errCount < Math.min(queue.size(), 5)) next();
+        else fire();
+    }
+
+    void requestFocus() {
+        try {
+            AudioManager am = ctx.getSystemService(AudioManager.class);
+            if (focusReq == null) {
+                focusReq = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                        .setOnAudioFocusChangeListener(f -> {
+                            if (f == AudioManager.AUDIOFOCUS_LOSS || f == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+                                main.post(this::pause);   // 電話などが来たら一時停止
+                        }, main)
+                        .build();
+            }
+            am.requestAudioFocus(focusReq);
+        } catch (Exception ignored) { }
     }
 
     public void pause() { if (mp.isPlaying()) mp.pause(); fire(); }

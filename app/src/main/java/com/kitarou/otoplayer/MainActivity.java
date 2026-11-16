@@ -458,7 +458,7 @@ public class MainActivity extends Activity implements Player.Listener {
         bg.setColor(CARD);
         bg.setCornerRadius(dp(14));
         bar.setBackground(bg);
-        bar.setPadding(dp(12), dp(10), dp(12), dp(10));
+        bar.setPadding(dp(12), dp(8), dp(12), dp(8));
         nowTitle = text("曲を選んでください", 16, TXT);
         nowTitle.setSingleLine(true);
         nowTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -467,14 +467,14 @@ public class MainActivity extends Activity implements Player.Listener {
         seek = new SeekBar(this);
         seek.setMax(1000);
         seek.setOnSeekBarChangeListener(seekListener());
-        bar.addView(seek, lp(-1, dp(36), 0));
+        bar.addView(seek, lp(-1, dp(30), 0));
         timeText = text("0:00 / 0:00", 13, SUB);
         timeText.setGravity(Gravity.CENTER);
         bar.addView(timeText);
         LinearLayout btns = new LinearLayout(this);
         btns.setOrientation(LinearLayout.HORIZONTAL);
-        Button prev = button("⏮", 22), next = button("⏭", 22);
-        btnPlay = button("▶", 24);
+        Button prev = button("⏮", 18), next = button("⏭", 18);
+        btnPlay = button("▶", 20);
         setOn(btnPlay, true);
         prev.setOnClickListener(v -> player.prev());
         next.setOnClickListener(v -> player.next());
@@ -488,8 +488,8 @@ public class MainActivity extends Activity implements Player.Listener {
         float[] ws = {1, 1.4f, 1};
         Button[] bs = {prev, btnPlay, next};
         for (int i = 0; i < 3; i++) {
-            LinearLayout.LayoutParams p = lp(0, dp(56), ws[i]);
-            p.setMargins(dp(4), dp(6), dp(4), 0);
+            LinearLayout.LayoutParams p = lp(0, dp(40), ws[i]);
+            p.setMargins(dp(4), dp(4), dp(4), 0);
             btns.addView(bs[i], p);
         }
         bar.addView(btns);
@@ -653,29 +653,12 @@ public class MainActivity extends Activity implements Player.Listener {
         col.setPadding(dp(6), dp(10), dp(6), dp(10));
         sv.addView(col);
 
-        // アナライザー／イコライザーの切り替え
-        LinearLayout modeRow = new LinearLayout(this);
-        Button mAna = button("Analyzer", 15);
-        Button mEq = button("Equalizer", 15);
-        LinearLayout.LayoutParams mp1 = lp(0, dp(42), 1), mp2 = lp(0, dp(42), 1);
-        mp1.setMargins(0, 0, dp(3), 0);
-        mp2.setMargins(dp(3), 0, 0, 0);
-        modeRow.addView(mAna, mp1);
-        modeRow.addView(mEq, mp2);
-        col.addView(modeRow);
+        // アナライザーとイコライザーは重ねて表示（切り替えボタンなし）
         spectrum = new SpectrumView(this);
         LinearLayout.LayoutParams spp = lp(-1, dp(220), 0);
-        spp.setMargins(0, dp(6), 0, dp(14));
+        spp.setMargins(0, 0, 0, dp(10));
         col.addView(spectrum, spp);
-        boolean eqStart = getPreferences(MODE_PRIVATE).getBoolean("eqMode", false);
-        Runnable[] setMode = new Runnable[2];
-        setMode[0] = () -> { spectrum.setEqMode(false); setOn(mAna, true); setOn(mEq, false);
-            getPreferences(MODE_PRIVATE).edit().putBoolean("eqMode", false).apply(); };
-        setMode[1] = () -> { spectrum.setEqMode(true); setOn(mAna, false); setOn(mEq, true);
-            getPreferences(MODE_PRIVATE).edit().putBoolean("eqMode", true).apply(); };
-        mAna.setOnClickListener(v -> setMode[0].run());
-        mEq.setOnClickListener(v -> setMode[1].run());
-        setMode[eqStart ? 1 : 0].run();
+        spectrum.setEqMode(true);
         spectrum.setEqListener(new SpectrumView.EqListener() {
             public void onEq(int c, float db) {
                 // 8本のつまみ → 10バンド（いちばん低い・高いつまみは2つずつ動かす）
@@ -715,22 +698,23 @@ public class MainActivity extends Activity implements Player.Listener {
         protectSw.setText("音割れ防止");
         protectSw.setTextColor(TXT);
         protectSw.setTextSize(14);
-        protectSw.setPadding(0, dp(6), 0, dp(14));
+        protectSw.setPadding(0, dp(4), 0, dp(4));
+        protectSw.setMinHeight(dp(44));
         protectSw.setOnCheckedChangeListener((b, on) -> {
             player.protect = on; player.applyEq(); player.saveEq();
         });
-        col.addView(protectSw);
+        col.addView(protectSw, lp(-1, -2, 0));
 
         // プリセット
-        String[] names = {"フラット", "重低音", "ボーカル", "迫力"};
+        String[] names = {"フラット", "ポップス", "ボーカル", "迫力"};
         float[][] presets = {
                 {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-                {5, 4, 2, 0, -1, 0, 1, 2, 2, 2},
+                {3, 3, 1, -1, 0, 1, 2, 3, 3, 2},
                 {-2, -1, 0, 2, 4, 4, 2, 1, 0, 0},
                 {4, 3, 0, -2, -1, 1, 3, 4, 4, 4}};
-        float[] presetBass = {0, 6, 0, 3};
+        float[] presetBass = {0, 2, 0, 3};
         LinearLayout pr = new LinearLayout(this);
-        pr.setPadding(0, dp(6), 0, dp(14));
+        pr.setPadding(0, dp(6), 0, dp(16));
         for (int i = 0; i < names.length; i++) {
             Button b = button(names[i], 15);
             presetBtns[i] = b;
@@ -765,7 +749,7 @@ public class MainActivity extends Activity implements Player.Listener {
         TextView hs = text("マイ設定（3つまで保存）", 20, ACC);
         hs.setTypeface(Typeface.DEFAULT_BOLD);
         col.addView(hs);
-        TextView hsn = text("「保存」で今の音を記録、「設定1」などを押すと呼び出します。", 13, SUB);
+        TextView hsn = text("「保存」で今の音を名前を付けて記録、名前のボタンを押すと呼び出します。", 13, SUB);
         hsn.setPadding(0, dp(2), 0, dp(4));
         col.addView(hsn);
         for (int n = 0; n < 3; n++) {
@@ -778,22 +762,14 @@ public class MainActivity extends Activity implements Player.Listener {
                 if (player.loadSlot(k)) {
                     clearPreset();
                     refreshEq();
-                    Toast.makeText(this, "設定" + (k + 1) + "にしました", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "「" + slotName(k) + "」にしました", Toast.LENGTH_SHORT).show();
                 } else {
-                    Toast.makeText(this, "設定" + (k + 1) + "はまだ保存されていません", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "まだ保存されていません。「保存」を押してください", Toast.LENGTH_SHORT).show();
                 }
             });
             Button save = button("保存", 16);
-            save.setOnClickListener(v -> new AlertDialog.Builder(this)
-                    .setMessage("今の音を「設定" + (k + 1) + "」に保存しますか？"
-                            + (player.slotUsed(k) ? "\n（前に保存した内容は上書きされます）" : ""))
-                    .setPositiveButton("保存する", (d, w) -> {
-                        player.saveSlot(k);
-                        refreshSlots();
-                        Toast.makeText(this, "設定" + (k + 1) + "に保存しました", Toast.LENGTH_SHORT).show();
-                    })
-                    .setNegativeButton("やめる", null)
-                    .show());
+            save.setOnClickListener(v -> askSave(k));
+            load.setOnLongClickListener(v -> { if (player.slotUsed(k)) askRename(k); return true; });
             LinearLayout.LayoutParams p1 = lp(0, dp(50), 1);
             p1.setMargins(dp(3), 0, dp(3), 0);
             LinearLayout.LayoutParams p2 = lp(dp(96), dp(50), 0);
@@ -825,11 +801,64 @@ public class MainActivity extends Activity implements Player.Listener {
         updatePresetBtns();
     }
 
+    String slotName(int n) {
+        String def = "設定" + (n + 1);
+        String s = getSharedPreferences("eq", MODE_PRIVATE).getString("s" + n + "_name", def);
+        return s == null || s.trim().isEmpty() ? def : s;
+    }
+
+    EditText nameBox(int k) {
+        EditText e = new EditText(this);
+        e.setSingleLine(true);
+        e.setHint("例　クラシック");
+        if (player.slotUsed(k)) { e.setText(slotName(k)); e.setSelection(e.getText().length()); }
+        FrameLayout f = new FrameLayout(this);
+        f.setPadding(dp(20), dp(8), dp(20), 0);
+        f.addView(e);
+        e.setTag(f);
+        return e;
+    }
+
+    void putName(int k, String name) {
+        name = name.trim();
+        if (name.isEmpty()) name = "設定" + (k + 1);
+        getSharedPreferences("eq", MODE_PRIVATE).edit().putString("s" + k + "_name", name).apply();
+    }
+
+    /** 今の音に名前を付けて保存 */
+    void askSave(int k) {
+        EditText e = nameBox(k);
+        new AlertDialog.Builder(this)
+                .setTitle("名前を付けて保存")
+                .setMessage("今の音を保存します。名前を入れてください。"
+                        + (player.slotUsed(k) ? "\n（「" + slotName(k) + "」は上書きされます）" : ""))
+                .setView((View) e.getTag())
+                .setPositiveButton("保存する", (d, w) -> {
+                    player.saveSlot(k);
+                    putName(k, e.getText().toString());
+                    refreshSlots();
+                    Toast.makeText(this, "「" + slotName(k) + "」に保存しました", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("やめる", null)
+                .show();
+    }
+
+    /** 名前のボタンを長押し → 名前だけ変える */
+    void askRename(int k) {
+        EditText e = nameBox(k);
+        new AlertDialog.Builder(this)
+                .setTitle("名前を変える")
+                .setView((View) e.getTag())
+                .setPositiveButton("変える", (d, w) -> { putName(k, e.getText().toString()); refreshSlots(); })
+                .setNegativeButton("やめる", null)
+                .show();
+    }
+
     void refreshSlots() {
         for (int n = 0; n < 3; n++) {
             if (slotBtns[n] == null) continue;
             boolean used = player.slotUsed(n);
-            slotBtns[n].setText("設定" + (n + 1) + (used ? "" : "（空き）"));
+            slotBtns[n].setText(used ? slotName(n) : "（空き）");
             slotBtns[n].setTextColor(used ? TXT : SUB);
         }
     }

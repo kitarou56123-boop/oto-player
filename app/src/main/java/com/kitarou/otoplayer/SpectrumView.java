@@ -221,7 +221,7 @@ public class SpectrumView extends View {
             return;
         }
 
-        drawBars(cv, w, eqMode ? 0.35f : 1f);
+        drawBars(cv, w, eqMode ? 0.5f : 1f);
 
         if (eqMode) {
             drawEq(cv, w);

@@ -12,7 +12,7 @@ import android.view.View;
 public class SpectrumView extends View {
 
     static final int N = 24;
-    static final float LO = 30f, HI = 16000f;
+    static final float LO = 45f, HI = 16000f;
 
     final float[] level = new float[N];
     final float[] peak = new float[N];
@@ -30,7 +30,7 @@ public class SpectrumView extends View {
         density = c.getResources().getDisplayMetrics().density;
         for (int i = 0; i <= N; i++) edges[i] = (float) (LO * Math.pow(HI / LO, i / (double) N));
         bar.setColor(0xFF9AD8FF);              // 薄いブルー
-        pk.setColor(0xFFE3F5FF);               // てっぺんの線（さらに薄い青）
+        pk.setColor(0xFFFFFFFF);               // てっぺんの線（白）
         label.setColor(0xFF7FA6D6);
         label.setTextSize(11 * density);
         label.setTextAlign(Paint.Align.CENTER);
@@ -40,8 +40,10 @@ public class SpectrumView extends View {
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
         super.onSizeChanged(w, h, ow, oh);
-        // 棒：下は少し濃い水色 → 上ほど薄いブルー
-        bar.setShader(new LinearGradient(0, h, 0, 0, 0xFF5BB8F0, 0xFFC8ECFF, Shader.TileMode.CLAMP));
+        // 棒：下はしっかりした青 → 上がるほど薄い青 → てっぺんは白
+        bar.setShader(new LinearGradient(0, h, 0, 0,
+                new int[]{0xFF1565E0, 0xFF4FA3F7, 0xFFA8D8FF, 0xFFFFFFFF},
+                new float[]{0f, 0.35f, 0.7f, 1f}, Shader.TileMode.CLAMP));
     }
 
     public void setMessage(String m) { message = m; postInvalidate(); }
@@ -53,12 +55,21 @@ public class SpectrumView extends View {
         float binHz = (rateMilliHz / 1000f) / f.length;
         if (binHz <= 0) return;
         for (int b = 0; b < N; b++) {
-            int k0 = Math.max(1, (int) (edges[b] / binHz));
-            int k1 = Math.min(n - 1, Math.max(k0, (int) (edges[b + 1] / binHz)));
-            float mag = 0;
-            for (int k = k0; k <= k1; k++) {
-                float re = f[2 * k], im = f[2 * k + 1];
-                mag = Math.max(mag, (float) Math.hypot(re, im));
+            float lo = edges[b], hi = edges[b + 1];
+            float mag;
+            if (hi - lo < binHz * 2) {
+                // 低い音は1つの区切りが細かすぎるので、帯の真ん中の高さを
+                // となりの区切りとの間で計算して求める（同じ値にならないように）
+                float c = (float) Math.sqrt(lo * hi) / binHz;
+                int k = Math.max(1, Math.min(n - 2, (int) c));
+                float t = Math.max(0, Math.min(1, c - k));
+                float m0 = bin(f, k), m1 = bin(f, k + 1);
+                mag = m0 + (m1 - m0) * t;
+            } else {
+                int k0 = Math.max(1, (int) (lo / binHz));
+                int k1 = Math.min(n - 1, Math.max(k0, (int) (hi / binHz)));
+                mag = 0;
+                for (int k = k0; k <= k1; k++) mag = Math.max(mag, bin(f, k));
             }
             float db = (float) (20 * Math.log10(mag / 128f + 1e-4));
             float v = Math.max(0, Math.min(1, (db + 54) / 54f));
@@ -67,6 +78,11 @@ public class SpectrumView extends View {
             else peak[b] = Math.max(0, peak[b] - 0.012f);
         }
         postInvalidate();
+    }
+
+    static float bin(byte[] f, int k) {
+        float re = f[2 * k], im = f[2 * k + 1];
+        return (float) Math.hypot(re, im);
     }
 
     /** 止まった時に棒を下げる */

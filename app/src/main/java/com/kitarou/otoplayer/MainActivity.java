@@ -649,16 +649,13 @@ public class MainActivity extends Activity implements Player.Listener {
         sv.addView(col);
 
         // アナライザー
-        TextView h0 = text("アナライザー", 20, ACC);
-        h0.setTypeface(Typeface.DEFAULT_BOLD);
-        col.addView(h0);
         spectrum = new SpectrumView(this);
         LinearLayout.LayoutParams spp = lp(-1, dp(150), 0);
         spp.setMargins(0, dp(6), 0, dp(14));
         col.addView(spectrum, spp);
 
         // 重低音
-        TextView h1 = text("重低音", 20, ACC);
+        TextView h1 = text("Bass Plus", 20, ACC);
         h1.setTypeface(Typeface.DEFAULT_BOLD);
         col.addView(h1);
         LinearLayout br = new LinearLayout(this);
@@ -691,9 +688,6 @@ public class MainActivity extends Activity implements Player.Listener {
         col.addView(protectSw);
 
         // プリセット
-        TextView h2 = text("おまかせ", 20, ACC);
-        h2.setTypeface(Typeface.DEFAULT_BOLD);
-        col.addView(h2);
         String[] names = {"フラット", "重低音", "ボーカル", "迫力"};
         float[][] presets = {
                 {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},

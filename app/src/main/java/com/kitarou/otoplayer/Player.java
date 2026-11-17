@@ -28,7 +28,9 @@ public class Player {
 
     /** イコライザーのつまみ（9本）の周波数 */
     public static final int BANDS = 9;
-    static final float[] KNOB_HZ = {60, 310, 600, 1000, 2000, 4000, 8000, 11000, 15000};
+    static final float[] KNOB_HZ = {60, 125, 250, 500, 1000, 2000, 4000, 8000, 15000};
+    /** ひとつ前の版のつまみの周波数（保存してあった値の置き換え用） */
+    static final float[] OLD_KNOB_HZ = {60, 310, 600, 1000, 2000, 4000, 8000, 11000, 15000};
     /** VLCの中のイコライザーの周波数（10個で決まっている） */
     static final float[] VLC_HZ = {60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000};
     /** 重低音（Bass Plus）をどの周波数にどれだけ足すか */
@@ -392,7 +394,7 @@ public class Player {
 
     public void saveEq() {
         SharedPreferences.Editor e = ctx.getSharedPreferences("eq", 0).edit();
-        for (int i = 0; i < BANDS; i++) e.putFloat("k" + i, bands[i]);
+        for (int i = 0; i < BANDS; i++) e.putFloat("q" + i, bands[i]);
         e.putFloat("bass", bass);
         e.putBoolean("protect", protect);
         e.apply();
@@ -406,7 +408,7 @@ public class Player {
 
     public void saveSlot(int n) {
         SharedPreferences.Editor e = ctx.getSharedPreferences("eq", 0).edit();
-        for (int i = 0; i < BANDS; i++) e.putFloat("s" + n + "_k" + i, bands[i]);
+        for (int i = 0; i < BANDS; i++) e.putFloat("s" + n + "_q" + i, bands[i]);
         e.putFloat("s" + n + "_bass", bass);
         e.putBoolean("s" + n + "_protect", protect);
         e.putBoolean("s" + n + "_used", true);
@@ -449,10 +451,16 @@ public class Player {
         return Math.max(-20f, Math.min(20f, g));
     }
 
-    /** 保存した値を読む。前の版（8本のつまみ）の値しか無ければ、9本に置き換える */
+    /** 保存した値を読む。前の版の値しか無ければ、今のつまみの位置に置き換える */
     static void readKnobs(SharedPreferences p, String pre, float[] out) {
+        if (p.contains(pre + "q0")) {
+            for (int i = 0; i < BANDS; i++) out[i] = p.getFloat(pre + "q" + i, 0);
+            return;
+        }
         if (p.contains(pre + "k0")) {
-            for (int i = 0; i < BANDS; i++) out[i] = p.getFloat(pre + "k" + i, 0);
+            float[] old = new float[OLD_KNOB_HZ.length];
+            for (int i = 0; i < old.length; i++) old[i] = p.getFloat(pre + "k" + i, 0);
+            for (int i = 0; i < BANDS; i++) out[i] = Math.round(interp(OLD_KNOB_HZ, old, KNOB_HZ[i]) * 2) / 2f;
             return;
         }
         float[] old = new float[VLC_HZ.length];

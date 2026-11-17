@@ -16,16 +16,16 @@ import java.util.Locale;
 
 /**
  * アナライザー（いま鳴っている音の高さごとの強さを棒で表示）
- * イコライザーモードでは、同じ画面で8本のつまみを上下に動かして音を調整できる
+ * イコライザーモードでは、同じ画面で9本のつまみを上下に動かして音を調整できる
  */
 public class SpectrumView extends View {
 
     static final int N = 24;
     static final float LO = 45f, HI = 16000f;
 
-    /** イコライザーのつまみ（8本） */
-    static final int EQN = 8;
-    static final String[] EQ_LABEL = {"60", "310", "600", "1k", "3k", "6k", "12k", "16k"};
+    /** イコライザーのつまみ（9本） */
+    static final int EQN = 9;
+    static final String[] EQ_LABEL = {"60", "310", "600", "1k", "2k", "4k", "8k", "11k", "15k"};
     static final float EQ_MAX = 12f;
 
     public interface EqListener {
@@ -111,11 +111,9 @@ public class SpectrumView extends View {
 
     public void setEqMode(boolean on) { eqMode = on; dragging = -1; invalidate(); }
 
-    /** 10バンドの値から、8本のつまみの値を作る */
+    /** 9本のつまみの値を表示に入れる */
     public void setBands(float[] b) {
-        eq[0] = b[1];
-        for (int i = 1; i <= 6; i++) eq[i] = b[i + 1];
-        eq[7] = b[8];
+        System.arraycopy(b, 0, eq, 0, EQN);
         invalidate();
     }
 

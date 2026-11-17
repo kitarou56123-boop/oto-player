@@ -665,10 +665,7 @@ public class MainActivity extends Activity implements Player.Listener {
         spectrum.setEqMode(true);
         spectrum.setEqListener(new SpectrumView.EqListener() {
             public void onEq(int c, float db) {
-                // 8本のつまみ → 10バンド（いちばん低い・高いつまみは2つずつ動かす）
-                if (c == 0) { player.bands[0] = db; player.bands[1] = db; }
-                else if (c == 7) { player.bands[8] = db; player.bands[9] = db; }
-                else player.bands[c + 1] = db;
+                player.bands[c] = db;   // 9本のつまみ
                 player.applyEq();
                 clearPreset();
             }
@@ -712,10 +709,11 @@ public class MainActivity extends Activity implements Player.Listener {
         // プリセット
         String[] names = {"フラット", "ポップス", "ボーカル", "迫力"};
         float[][] presets = {
-                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-                {3, 3, 1, -1, 0, 1, 2, 3, 3, 2},
-                {-2, -1, 0, 2, 4, 4, 2, 1, 0, 0},
-                {4, 3, 0, -2, -1, 1, 3, 4, 4, 4}};
+                // 60, 310, 600, 1k, 2k, 4k, 8k, 11k, 15k
+                {0, 0, 0, 0, 0, 0, 0, 0, 0},
+                {3, 1, -1, 0, 1, 2, 2, 3, 3},
+                {-2, 0, 2, 4, 4, 3, 2, 1, 0},
+                {4, 0, -2, -1, 0, 2, 3, 4, 4}};
         float[] presetBass = {0, 2, 0, 3};
         LinearLayout pr = new LinearLayout(this);
         pr.setPadding(0, dp(6), 0, dp(16));

@@ -25,10 +25,14 @@ public class Player {
 
     public interface Listener { void onPlayerChanged(); }
 
-    public static final int BANDS = 10;
-    /** 重低音をどの帯域にどれだけ足すか（VLCの10バンド：60,170,310,600Hz…） */
-    static final float[] BASS_WEIGHT = {1.0f, 0.65f, 0.25f, 0, 0, 0, 0, 0, 0, 0};
-    static final float[] BAND_HZ = {60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000};
+    /** イコライザーのつまみ（9本）の周波数 */
+    public static final int BANDS = 9;
+    static final float[] KNOB_HZ = {60, 310, 600, 1000, 2000, 4000, 8000, 11000, 15000};
+    /** VLCの中のイコライザーの周波数（10個で決まっている） */
+    static final float[] VLC_HZ = {60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000};
+    /** 重低音（Bass Plus）をどの周波数にどれだけ足すか */
+    static final float[] BASS_HZ = {60, 170, 310, 600};
+    static final float[] BASS_W = {1.0f, 0.65f, 0.25f, 0f};
 
     private static Player inst;
 
@@ -376,14 +380,14 @@ public class Player {
 
     void loadEq() {
         SharedPreferences p = ctx.getSharedPreferences("eq", 0);
-        for (int i = 0; i < BANDS; i++) bands[i] = p.getFloat("b" + i, 0);
+        readKnobs(p, "", bands);
         bass = p.getFloat("bass", 0);
         protect = p.getBoolean("protect", true);
     }
 
     public void saveEq() {
         SharedPreferences.Editor e = ctx.getSharedPreferences("eq", 0).edit();
-        for (int i = 0; i < BANDS; i++) e.putFloat("b" + i, bands[i]);
+        for (int i = 0; i < BANDS; i++) e.putFloat("k" + i, bands[i]);
         e.putFloat("bass", bass);
         e.putBoolean("protect", protect);
         e.apply();
@@ -397,7 +401,7 @@ public class Player {
 
     public void saveSlot(int n) {
         SharedPreferences.Editor e = ctx.getSharedPreferences("eq", 0).edit();
-        for (int i = 0; i < BANDS; i++) e.putFloat("s" + n + "_b" + i, bands[i]);
+        for (int i = 0; i < BANDS; i++) e.putFloat("s" + n + "_k" + i, bands[i]);
         e.putFloat("s" + n + "_bass", bass);
         e.putBoolean("s" + n + "_protect", protect);
         e.putBoolean("s" + n + "_used", true);
@@ -407,7 +411,7 @@ public class Player {
     public boolean loadSlot(int n) {
         SharedPreferences p = ctx.getSharedPreferences("eq", 0);
         if (!p.getBoolean("s" + n + "_used", false)) return false;
-        for (int i = 0; i < BANDS; i++) bands[i] = p.getFloat("s" + n + "_b" + i, 0);
+        readKnobs(p, "s" + n + "_", bands);
         bass = p.getFloat("s" + n + "_bass", 0);
         protect = p.getBoolean("s" + n + "_protect", true);
         applyEq();
@@ -421,20 +425,34 @@ public class Player {
         return 0;
     }
 
-    float gain(int i) {
-        return Math.max(-20f, Math.min(20f, bands[i] + BASS_WEIGHT[i] * bass));
-    }
-
-    /** 好きな周波数での強さ（となりのバンドの間をなめらかにつなぐ） */
-    float gainAt(float hz) {
-        if (hz <= BAND_HZ[0]) return gain(0);
-        for (int i = 0; i < BANDS - 1; i++) {
-            if (hz <= BAND_HZ[i + 1]) {
-                double t = Math.log(hz / BAND_HZ[i]) / Math.log(BAND_HZ[i + 1] / BAND_HZ[i]);
-                return (float) (gain(i) * (1 - t) + gain(i + 1) * t);
+    /** 周波数の表の間をなめらかにつなぐ（周波数は対数で考える） */
+    static float interp(float[] hzs, float[] vals, float hz) {
+        int n = hzs.length;
+        if (hz <= hzs[0]) return vals[0];
+        for (int i = 0; i < n - 1; i++) {
+            if (hz <= hzs[i + 1]) {
+                double t = Math.log(hz / hzs[i]) / Math.log(hzs[i + 1] / hzs[i]);
+                return (float) (vals[i] * (1 - t) + vals[i + 1] * t);
             }
         }
-        return gain(BANDS - 1);
+        return vals[n - 1];
+    }
+
+    /** 好きな周波数での強さ（9本のつまみ＋Bass Plus） */
+    float gainAt(float hz) {
+        float g = interp(KNOB_HZ, bands, hz) + interp(BASS_HZ, BASS_W, hz) * bass;
+        return Math.max(-20f, Math.min(20f, g));
+    }
+
+    /** 保存した値を読む。前の版（8本のつまみ）の値しか無ければ、9本に置き換える */
+    static void readKnobs(SharedPreferences p, String pre, float[] out) {
+        if (p.contains(pre + "k0")) {
+            for (int i = 0; i < BANDS; i++) out[i] = p.getFloat(pre + "k" + i, 0);
+            return;
+        }
+        float[] old = new float[VLC_HZ.length];
+        for (int i = 0; i < old.length; i++) old[i] = p.getFloat(pre + "b" + i, 0);
+        for (int i = 0; i < BANDS; i++) out[i] = Math.round(interp(VLC_HZ, old, KNOB_HZ[i]) * 2) / 2f;
     }
 
     public void applyEq() {
@@ -448,10 +466,10 @@ public class Player {
                 return;
             }
             MediaPlayer.Equalizer eq = MediaPlayer.Equalizer.create();
-            int n = Math.min(BANDS, MediaPlayer.Equalizer.getBandCount());
+            int n = MediaPlayer.Equalizer.getBandCount();
             float max = 0;
             for (int i = 0; i < n; i++) {
-                float g = gain(i);
+                float g = gainAt(MediaPlayer.Equalizer.getBandFrequency(i));
                 eq.setAmp(i, g);
                 if (g > max) max = g;
             }

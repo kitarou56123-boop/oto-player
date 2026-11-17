@@ -6,6 +6,7 @@ import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.audiofx.Equalizer;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -60,6 +61,9 @@ public class Player {
     // Android標準の再生（予備）
     android.media.MediaPlayer amp;
     Equalizer aeq;
+    /** 細かく効くイコライザー（Android 9以上）。32か所で音を調整して、9本のつまみの通りの音にする */
+    android.media.audiofx.DynamicsProcessing dp;
+    static final int DP_N = 32;
     boolean useAndroid = false;
 
     // 音質設定
@@ -265,6 +269,7 @@ public class Player {
     void releaseAndroid() {
         main.removeCallbacks(ticker);
         if (aeq != null) { try { aeq.release(); } catch (Exception ignored) { } aeq = null; }
+        if (dp != null) { try { dp.release(); } catch (Exception ignored) { } dp = null; }
         if (amp != null) { try { amp.release(); } catch (Exception ignored) { } amp = null; }
         useAndroid = false;
     }
@@ -481,11 +486,16 @@ public class Player {
     /** 標準の仕組みで再生中のイコライザー（スマホ側の帯域に近い所の値を使う） */
     void applyAndroidEq(boolean flat) {
         if (amp == null) return;
+        if (flat) {                      // 何もいじっていない時は無加工で通す
+            try { if (aeq != null) aeq.setEnabled(false); } catch (Exception ignored) { }
+            try { if (dp != null) dp.setEnabled(false); } catch (Exception ignored) { }
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 28 && applyDp()) {
+            try { if (aeq != null) aeq.setEnabled(false); } catch (Exception ignored) { }
+            return;
+        }
         try {
-            if (flat) {
-                if (aeq != null) aeq.setEnabled(false);
-                return;
-            }
             if (aeq == null) aeq = new Equalizer(0, amp.getAudioSessionId());
             short[] range = aeq.getBandLevelRange();
             short nb = aeq.getNumberOfBands();
@@ -497,5 +507,36 @@ public class Player {
             }
             aeq.setEnabled(true);
         } catch (Throwable ignored) { }
+    }
+
+    /** 32か所に分けて、つまみの曲線どおりに上げ下げする（9本それぞれがはっきり効く） */
+    @android.annotation.TargetApi(28)
+    boolean applyDp() {
+        try {
+            if (dp == null) {
+                android.media.audiofx.DynamicsProcessing.Config cfg =
+                        new android.media.audiofx.DynamicsProcessing.Config.Builder(
+                                android.media.audiofx.DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                                2, true, DP_N, false, 0, false, 0, false).build();
+                dp = new android.media.audiofx.DynamicsProcessing(0, amp.getAudioSessionId(), cfg);
+            }
+            android.media.audiofx.DynamicsProcessing.Eq eq =
+                    new android.media.audiofx.DynamicsProcessing.Eq(true, true, DP_N);
+            float max = 0;
+            for (int i = 0; i < DP_N; i++) {
+                double lo = 20 * Math.pow(1000, i / (double) DP_N);
+                double hi = 20 * Math.pow(1000, (i + 1) / (double) DP_N);
+                float g = gainAt((float) Math.sqrt(lo * hi));
+                if (g > max) max = g;
+                eq.setBand(i, new android.media.audiofx.DynamicsProcessing.EqBand(true, (float) hi, g));
+            }
+            dp.setPreEqAllChannelsTo(eq);
+            dp.setInputGainAllChannelsTo(protect ? -max : 0f);   // 音割れ防止
+            dp.setEnabled(true);
+            return true;
+        } catch (Throwable t) {
+            if (dp != null) { try { dp.release(); } catch (Throwable ignored) { } dp = null; }
+            return false;
+        }
     }
 }

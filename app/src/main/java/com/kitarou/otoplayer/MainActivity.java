@@ -748,7 +748,7 @@ public class MainActivity extends Activity implements Player.Listener {
         col.addView(pr);
 
         // マイ設定
-        TextView hs = text("マイ設定（3つまで保存）", 20, ACC);
+        TextView hs = text("My Settings", 20, ACC);
         hs.setTypeface(Typeface.DEFAULT_BOLD);
         col.addView(hs);
         TextView hsn = text("「保存」で今の音を名前を付けて記録、名前のボタンを押すと呼び出します。", 13, SUB);

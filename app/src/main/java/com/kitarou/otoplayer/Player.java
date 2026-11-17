@@ -322,6 +322,18 @@ public class Player {
         fire();
     }
 
+    /** アプリを終了した時：曲も途中の位置も全部消して、まっさらに戻す */
+    public void reset() {
+        main.removeCallbacks(watchdog);
+        releaseAndroid();
+        try { if (mp != null) mp.stop(); } catch (Throwable ignored) { }
+        loaded = false;
+        queue = new ArrayList<>();
+        index = -1;
+        lastError = null;
+        fire();
+    }
+
     private void onEnd() {
         MediaItem it = current();
         if (it != null && it.video) { stop(); return; }   // 動画は1本で止める

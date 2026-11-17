@@ -86,11 +86,7 @@ public class PlaybackService extends Service implements Player.Listener {
         if (A_TOGGLE.equals(a)) player.toggle();
         else if (A_NEXT.equals(a)) player.next();
         else if (A_PREV.equals(a)) player.prev();
-        else if (A_CLOSE.equals(a)) {
-            player.pause();
-            stopForeground(STOP_FOREGROUND_REMOVE);
-            stopSelf();
-        }
+        else if (A_CLOSE.equals(a)) closeAll();
         return START_NOT_STICKY;
     }
 
@@ -150,12 +146,29 @@ public class PlaybackService extends Service implements Player.Listener {
                 .build();
     }
 
+    /** 終了：再生していた曲を消して、通知とサービスも片付ける */
+    void closeAll() {
+        player.removeListener(this);
+        player.reset();
+        try { session.setActive(false); } catch (Exception ignored) { }
+        stopForeground(STOP_FOREGROUND_REMOVE);
+        stopSelf();
+    }
+
+    /** 最近使ったアプリの一覧からJBLを消した（終了した）時 */
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        closeAll();
+        super.onTaskRemoved(rootIntent);
+    }
+
     @Override
     public void onDestroy() {
         running = false;
         player.removeListener(this);
         try { unregisterReceiver(noisy); } catch (Exception ignored) { }
         if (wake.isHeld()) wake.release();
+        try { session.setActive(false); } catch (Exception ignored) { }
         session.release();
         super.onDestroy();
     }

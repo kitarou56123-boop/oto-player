@@ -158,7 +158,11 @@ public class MainActivity extends Activity implements Player.Listener {
     public void onBackPressed() {
         if (videoBox.getVisibility() == View.VISIBLE) { closeVideo(); return; }
         if (tab == 0 && group != null) { group = null; filter(); return; }
-        moveTaskToBack(true);   // 戻るで閉じても再生を続ける
+        if (player.isPlaying()) { moveTaskToBack(true); return; }   // 再生中は戻るで閉じても再生を続ける
+        // 止まっている時は終了：曲も途中の位置も残さない
+        player.reset();
+        stopService(new Intent(this, PlaybackService.class));
+        finishAndRemoveTask();
     }
 
     // ---------- ファイルへのアクセス ----------
